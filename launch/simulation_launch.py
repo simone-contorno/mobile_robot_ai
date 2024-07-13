@@ -17,11 +17,11 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, GroupAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 
 def generate_launch_description():
     # Get package directories
@@ -38,6 +38,7 @@ def generate_launch_description():
     params_file = LaunchConfiguration('params_file')
     default_bt_xml_filename = LaunchConfiguration('default_bt_xml_filename')
     autostart = LaunchConfiguration('autostart')
+    cmd_vel_remap = LaunchConfiguration('cmd_vel_remap')
 
     # Launch configuration variables specific to simulation
     rviz_config_file = LaunchConfiguration('rviz_config_file')
@@ -122,6 +123,11 @@ def generate_launch_description():
         default_value='True',
         description='Whether run a SLAM')
     
+    declare_cmd_vel_remap = DeclareLaunchArgument(
+        'cmd_vel_remap', 
+        default_value='cmd_vel',
+        description='Remap cmd_vel input to this topic')
+    
     ### Robot ###
     
     declare_params_file_cmd = DeclareLaunchArgument(
@@ -169,17 +175,23 @@ def generate_launch_description():
         launch_arguments={'namespace': '', 
                           'use_namespace': 'False',
                           'rviz_config': rviz_config_file}.items())
-
-    bringup_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_dir, 'bringup_launch.py')),
-        launch_arguments={'namespace': namespace,
+    
+    bringup_cmd = GroupAction(
+        actions=[
+            SetRemap(src='cmd_vel', dst=cmd_vel_remap),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(os.path.join(launch_dir, 'bringup_launch.py')),
+                launch_arguments={'namespace': namespace,
                           'use_namespace': use_namespace,
                           'slam': slam,
                           'map': map_yaml_file,
                           'use_sim_time': use_sim_time,
                           'params_file': params_file,
                           'default_bt_xml_filename': default_bt_xml_filename,
-                          'autostart': autostart}.items())
+                          'autostart': autostart}.items()
+            ),  
+        ]
+    )
     
     # Launch descriptor
     ld = LaunchDescription()
@@ -193,6 +205,7 @@ def generate_launch_description():
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_bt_xml_cmd)
     ld.add_action(declare_autostart_cmd)
+    ld.add_action(declare_cmd_vel_remap)
 
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_simulator_cmd)
