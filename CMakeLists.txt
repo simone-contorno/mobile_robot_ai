@@ -19,6 +19,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -31,9 +32,20 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-install(
-  DIRECTORY launch maps rviz worlds 
+add_executable(data_subscriber src/data_subscriber.cpp)
+ament_target_dependencies(data_subscriber rclcpp sensor_msgs)
+
+install(DIRECTORY 
+  launch 
+  maps 
+  rviz 
+  worlds 
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(TARGETS
+  data_subscriber
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()
