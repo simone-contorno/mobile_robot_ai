@@ -3,16 +3,21 @@
 <package format="3">
   <name>mobile_robot_ai</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="simone.contorno@outlook.it">simone</maintainer>
-  <license>TODO: License declaration</license>
+  <description>TODO</description>
+  <maintainer email="simone.contorno@outlook.it">Simone Contorno</maintainer>
+  <license>MIT License</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>rclcpp</depend>
   <depend>rclpy</depend>
+
   <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>action_msgs</depend>
 
   <depend>robot_state_publisher</depend>
   <depend>hls_lfcd_lds_driver</depend>
