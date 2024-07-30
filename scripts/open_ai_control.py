@@ -51,11 +51,14 @@ class OpenAIControl(Node):
         # Laser scanner
         self.ranges = None
         
-        # Costmap 
+        # Path
+        self.compute_path = False 
         self.costmap = None
+        self.path = None
+        self.path_time = None
         
         # Time step
-        self.time_step = 1
+        self.path_time_step = 1
         
 		# Get ranges values
         self.subscription_ranges= self.create_subscription(
@@ -92,8 +95,22 @@ class OpenAIControl(Node):
             self.costmap_callback,
             10
         )
+        
+        """
+        # Get plan
+        self.subscription_plan = self.create_subscription(
+            Path,
+            'plan',
+            self.plan_callback,
+            10
+        )
+        """
+        
         # Publisher for the path
         self.publisher_path = self.create_publisher(Path, "/plan", 10)
+        
+        # Publisher for the trajectory
+        self.publisher_trajectory = self.create_publisher(PoseStamped, "/trajectory", 10)
         
         # Publisher for the control
         self.publisher_cmd = self.create_publisher(Twist, "/cmd_vel", 10)
@@ -157,6 +174,7 @@ class OpenAIControl(Node):
             self.goal_theta = theta
             self.goal = (x, y, theta) # Update new goal
             self.get_logger().info("[Goal] I heard new goal: (" + str(x) + ", " + str(y) + ", " + str(theta) + ")")
+            self.compute_path = True
 
         if self.odom != None and self.ranges != None:
             print("[Odom] Current pose: (" + str(self.odom[0]) + ", " + str(self.odom[1]) + ", " + str(self.odom[2]) + ")")
@@ -165,7 +183,7 @@ class OpenAIControl(Node):
             
             # Add goal and pose information to the user
             self.ai_user = ai_user + ("Here the updated data: " +
-                                "Time step: " + str(self.time_step) + " s\n" +
+                                "Time step: " + str(self.path_time_step) + " s\n" +
                                 "Goal: (" + str(self.goal[0]) + ", " + str(self.goal[1]) + ", " + str(self.goal[2]) + ")\n" +
                                 "Pose: (" + str(self.odom[0]) + ", " + str(self.odom[1]) + ", " + str(self.odom[2]) + ")\n" +
                                 "Ranges: ("
@@ -217,7 +235,7 @@ class OpenAIControl(Node):
 
             # Print time in milliseconds
             print("Time = " + str(diff) + " s")
-            self.time_step = diff
+            self.path_time_step = diff
             
             # Publish control commands
             cmd = Twist()
@@ -230,56 +248,76 @@ class OpenAIControl(Node):
     def costmap_callback(self, msg):
         if self.goal != (None, None, None) and self.odom != (None, None, None):
             if self.goal_prev != self.goal and self.costmap != msg.data: 
-                self.costmap = msg.data
-                #print(self.costmap)
-                
-                path = Path()
-                path.header.frame_id = 'map'
-                #path.header.stamp = self.get_clock().now().to_msg()
-                
-                #pose.header.stamp = self.get_clock().now().to_msg()
+                if self.compute_path == True: 
+                    self.costmap = msg.data
+                    #print(self.costmap)
                     
-                steps = 100
-                for i in range(steps):
-                    waypoint = PoseStamped()
-                    waypoint.header.frame_id = 'map'
-                    waypoint.pose.position.x = self.odom[0] + (self.goal[0]-self.odom[0]) / steps * i
-                    waypoint.pose.position.y = self.odom[1] + (self.goal[1]-self.odom[1]) / steps * i
+                    self.path = Path()
+                    self.path.header.frame_id = 'map'
+                    #self.path.header.stamp = self.get_clock().now().to_msg()
                     
-                    path.poses.append(waypoint)
-                
-                # Overwrite last waypoint
-                """
-                waypoint = PoseStamped()
-                waypoint.header.frame_id = ''
-                waypoint.pose.position.x = self.goal[0]
-                waypoint.pose.position.y = self.goal[1]
-                
-                (qx, qy, qz, qw) = quaternion_from_euler(0.0, 0.0, self.odom_theta)
-                
-                waypoint.pose.orientation.x = qx
-                waypoint.pose.orientation.y = qy
-                waypoint.pose.orientation.z = qz
-                waypoint.pose.orientation.w = qw
-                
-                path.poses.append(waypoint)
-                """
+                    #pose.header.stamp = self.get_clock().now().to_msg()
+                        
+                    steps = 100
+                    for i in range(steps):
+                        waypoint = PoseStamped()
+                        waypoint.header.frame_id = 'map'
+                        waypoint.pose.position.x = self.odom[0] + (self.goal[0]-self.odom[0]) / steps * i
+                        waypoint.pose.position.y = self.odom[1] + (self.goal[1]-self.odom[1]) / steps * i
+                        
+                        self.path.poses.append(waypoint)
                     
-                """
-                for i in range(len(self.costmap)):
+                    # Overwrite last waypoint
+                    """
                     waypoint = PoseStamped()
                     waypoint.header.frame_id = ''
-                    #pose.header.stamp = self.get_clock().now().to_msg()
+                    waypoint.pose.position.x = self.goal[0]
+                    waypoint.pose.position.y = self.goal[1]
                     
-                    waypoint.pose.position.x = (self.goal_x)
-                    waypoint.pose.position.y = self.costmap[i]
+                    (qx, qy, qz, qw) = quaternion_from_euler(0.0, 0.0, self.odom_theta)
                     
-                    path.poses.append(waypoint)
-                """
+                    waypoint.pose.orientation.x = qx
+                    waypoint.pose.orientation.y = qy
+                    waypoint.pose.orientation.z = qz
+                    waypoint.pose.orientation.w = qw
+                    
+                    self.path.poses.append(waypoint)
+                    """
+                        
+                    """
+                    for i in range(len(self.costmap)):
+                        waypoint = PoseStamped()
+                        waypoint.header.frame_id = ''
+                        #pose.header.stamp = self.get_clock().now().to_msg()
+                        
+                        waypoint.pose.position.x = (self.goal_x)
+                        waypoint.pose.position.y = self.costmap[i]
+                        
+                        self.path.poses.append(waypoint)
+                    """
+                    
+                    self.publisher_path.publish(self.path)
+                    self.path_time = self.get_clock().now().to_msg().sec
                 
-                self.publisher_path.publish(path)
-                #print(path)
-        
+                #print(self.path_time)
+                self.compute_path = False
+                
+                current_time = self.get_clock().now().to_msg().sec
+                print("Path time = " + str(self.path_time))
+                print("Current time = " + str(current_time))
+                print("Time difference = " + str(abs(self.path_time - current_time)))
+                self.publisher_trajectory.publish(self.path.poses[int(abs(self.path_time - current_time))])
+                #print(self.path)
+    
+    """
+    def plan_callback(self, msg):
+        if self.path != None and self.path_time != None:
+            pass
+    """
+            
+            
+            
+     
 def main(args=None):
     # Initialize the node
     rclpy.init(args=args)
