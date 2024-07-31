@@ -38,7 +38,6 @@ def generate_launch_description():
     params_file = LaunchConfiguration('params_file')
     default_bt_xml_filename = LaunchConfiguration('default_bt_xml_filename')
     autostart = LaunchConfiguration('autostart')
-    cmd_vel_remap = LaunchConfiguration('cmd_vel_remap')
 
     # Launch configuration variables specific to simulation
     rviz_config_file = LaunchConfiguration('rviz_config_file')
@@ -48,6 +47,10 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     headless = LaunchConfiguration('headless')
     world = LaunchConfiguration('world')
+    
+    # Remapping
+    cmd_vel_remap = LaunchConfiguration('cmd_vel_remap')
+    plan_remap = LaunchConfiguration('plan_remap')
     
     ### World ###
     declare_world_cmd = DeclareLaunchArgument(
@@ -123,11 +126,6 @@ def generate_launch_description():
         default_value='True',
         description='Whether run a SLAM')
     
-    declare_cmd_vel_remap = DeclareLaunchArgument(
-        'cmd_vel_remap', 
-        default_value='cmd_vel',
-        description='Remap cmd_vel input to this topic')
-    
     ### Robot ###
     
     declare_params_file_cmd = DeclareLaunchArgument(
@@ -167,6 +165,18 @@ def generate_launch_description():
         remappings=remappings,
         arguments=[urdf])
     
+    ### Remapping ###
+    
+    declare_cmd_vel_remap = DeclareLaunchArgument(
+        'cmd_vel_remap', 
+        default_value='cmd_vel',
+        description='Remap cmd_vel input to this topic')
+    
+    declare_plan_remap = DeclareLaunchArgument(
+        'plan_remap', 
+        default_value='plan',
+        description='Remap plan input to this topic')
+    
     # Launch files
         
     rviz_cmd = IncludeLaunchDescription(
@@ -179,6 +189,7 @@ def generate_launch_description():
     bringup_cmd = GroupAction(
         actions=[
             SetRemap(src='cmd_vel', dst=cmd_vel_remap),
+            SetRemap(src='plan', dst=plan_remap),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(launch_dir, 'bringup_launch.py')),
                 launch_arguments={'namespace': namespace,
@@ -205,7 +216,6 @@ def generate_launch_description():
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_bt_xml_cmd)
     ld.add_action(declare_autostart_cmd)
-    ld.add_action(declare_cmd_vel_remap)
 
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_simulator_cmd)
@@ -214,6 +224,9 @@ def generate_launch_description():
     ld.add_action(declare_simulator_cmd)
     ld.add_action(declare_headless_cmd)
     ld.add_action(declare_world_cmd)
+    
+    ld.add_action(declare_cmd_vel_remap)
+    ld.add_action(declare_plan_remap)
     
     # Simulation
     ld.add_action(start_gazebo_server_cmd)
