@@ -4,6 +4,7 @@ from openai import OpenAI
 
 import time
 import re
+import numpy as np 
 
 import rclpy
 from rclpy.node import Node
@@ -18,9 +19,20 @@ client = OpenAI()
 ### PID ###
 
 # Proportional gains
+Kp_v = 0.5
+Kp_w = 0.5
+
 Kp_x = 1.0
 Kp_y = 1.0
 Kp_theta = 1.0
+
+v_min = -0.5
+v_max = 0.5
+w_min = -0.5
+w_max = 0.5
+
+dv_max = 0.3
+dw_max = 3.14
 
 # Integral gains
 #Ki_x = 0.0
@@ -33,59 +45,71 @@ Kp_theta = 1.0
 #Kd_theta = 0.0
 
 # Time step
-dt = 0.5
-
-# Target
-x_target = None
-y_target = None
-theta_target = None
-
-# Current position
-x_current = None
-y_current = None
-theta_current = None
+dt = 0.8
 
 pid_prompt = f"""
-You are controlling a unicycle robot using a PID controller with only Proportional term. 
-The robot needs to achieve the following velocities:
+You are controlling a unicycle robot:
+- dx = v * cos(theta)
+- dy = v * sin(theta)
+- dtheta = w
 
-- Linear velocity along x-axis (m/s)
-- Linear velocity along y-axis (m/s)
-- Angular velocity about z-axis (rad/s)
+Using a PID controller, the robot needs to achieve the following velocities:
+- Linear velocity v_x along x-axis [m/s]
+- Linear velocity v_y along y-axis [m/s]
+- Angular velocity w_z about z-axis [rad/s]
 
 The current positions and orientation of the robot are:
-- Current x position: x_current in meters
-- Current y position: y_current in meters
-- Current theta orientation: theta_current in radians
+- Current x position: x_current [m]
+- Current y position: y_current [m]
+- Current theta orientation: theta_current [rad]
 
 The target positions and orientation of the robot are:
-- Target x position: x_target in meters
-- Target y position: y_target in meters
-- Target orientation (theta): atan2(y_target - y_current, x_target - x_current) in radians
+- Target x position: x_target [m]
+- Target y position: y_target [m]
+- Target theta orientation: atan2(y_target - y_current, x_target - x_current) [rad]
+
+The desired velocities once the target is reached are:
+- Linear velocity along x-axis: 0 m/s
+- Linear velocity along y-axis: 0 m/s
+- Angular velocity about z-axis: 0 rad/s
 
 Use the following gain parameters to compute the velocities:
-- Proportional x-axis gain (Kp_x): {Kp_x}
-- Proportional y-axis gain (Kp_y): {Kp_y}
-- Proportional theta-axis gain (Kp_theta): {Kp_theta}
+- Proportional positionx-axis gain (Kp_x): {Kp_x}
+- Proportional position y-axis gain (Kp_y): {Kp_y}
+- Proportional orientation theta gain (Kp_theta): {Kp_theta}
 
-The time step (dt) is {dt} seconds.
-
-Please calculate the errors:
+Firstly, calculate the errors mantaining the correct sign, also negative values are ok:
 - Error in x position: e_x = x_target - x_current
 - Error in y position: e_y = y_target - y_current
 - Error in orientation: e_theta = atan2(e_y, e_x) - theta_current
 
-Use these errors to compute the following terms:
-- Proportional x-axis term: P_x = {Kp_x} * e_x
-- Proportional y-axis term: P_y = {Kp_y} * e_y
-- Proportional theta-axis term: P_theta = {Kp_theta} * atan2(sin(e_theta), cos(e_theta))
+Then, compute the proportional terms:
+- Proportional x-axis term: P_x = Kp_x * e_x
+- Proportional y-axis term: P_y = Kp_y * e_y
+- Proportional theta-axis term: P_theta = Kp_theta * atan2(sin(e_theta), cos(e_theta))
 
-Finally, provide the control outputs (velocities) as:
-- Linear velocity along x: v_x = P_x 
-- Linear velocity along y: v_y = P_y 
-- Angular velocity about z: omega_z = P_theta
+Finally, provide the control outputs (velocities), mantaining the correct sign, as:
+- Linear velocity along x: v_x = P_x
+- Linear velocity along y: v_y = P_y
+- Angular velocity about z: w_z = P_theta
 
-Provide the results without any extra words in the format: v_x v_y omega_z
+Do not use the integral and derivative terms, only the proportional ones.
+
+The acceleration constraints are:
+- Maximum linear acceleration along x-axis and y-axis (a_min): {dv_max}
+- Maximum angular acceleration about z-axis (a_max): {dw_max}
+Consider this information to avoid abrupt linear and angular accelations.
+
+Compute the optimal control velocities to achieve the target position.
+Provide the results, without any extra words, in the format: v_x v_y w_z
+"""
+
+"""
+As constaints consider:
+- Mimimum linear velocity along x-axis and y-axis (v_min): {v_min}
+- Minimum angular velocity about z-axis (w_min): {w_min}
+- Maximum linear velocity along x-axis and y-axis (v_max): {v_max}
+- Maximum angular velocity about z-axis (w_max): {w_max}
 """
 
 ai_system = pid_prompt
@@ -104,9 +128,10 @@ class OpenAIControl(Node):
         self.odom_y = None
         self.odom_theta = None
         self.odom = (self.odom_x, self.odom_y, self.odom_theta)
-        self.x_err = 0.5
-        self.y_err = 0.5
+        self.x_err = 0.25
+        self.y_err = 0.25
         self.theta_err = 1.0
+        self.offset_odom = 0.1
         
         # Goal
         self.goal_x = None
@@ -123,7 +148,6 @@ class OpenAIControl(Node):
         self.costmap = None
         self.path = None
         self.path_percentage = 10
-        self.path_counter = 1
         
         # Time step
         self.path_time_step = 1
@@ -174,7 +198,6 @@ class OpenAIControl(Node):
     def goal_pose_callback(self, msg):
         x = msg.pose.position.x
         y = msg.pose.position.y
-        z = msg.pose.position.z
         
         qx = msg.pose.orientation.x
         qy = msg.pose.orientation.y
@@ -189,8 +212,8 @@ class OpenAIControl(Node):
             self.get_logger().info("[Goal Pose] I heard new goal: (" + str(x) + ", " + str(y) + ", " + str(theta) + ")")
     
     def plan_callback(self, msg):
-        self.get_logger().info("[Plan] I heard new plan: " + str(len(msg.poses)) + " waypoints")
-        #self.path = msg.poses
+        #self.get_logger().info("[Plan] I heard new plan: " + str(len(msg.poses)) + " waypoints")
+
         self.path = []
         
         # Choose a step to take equidistant waypoints
@@ -225,7 +248,6 @@ class OpenAIControl(Node):
         (_, _, theta) = euler_from_quaternion([qx, qy, qz, qw])
             
         self.path.append((x, y, theta))
-        self.path_counter = 1
         
         # Publish the new plan
         plan = Path()
@@ -248,18 +270,18 @@ class OpenAIControl(Node):
             plan.poses.append(waypoint)
         
         self.publisher_plan.publish(plan)
-        self.get_logger().info("[Plan] Published new plan: " + str(len(plan.poses)) + " waypoints")
+        #self.get_logger().info("[Plan] Published new plan: " + str(len(plan.poses)) + " waypoints")
              
     def odom_callback(self, msg):
-        self.odom_x = msg.pose.pose.position.x
-        self.odom_y = msg.pose.pose.position.y
-        
         qx = msg.pose.pose.orientation.x
         qy = msg.pose.pose.orientation.y
         qz = msg.pose.pose.orientation.z
         qw = msg.pose.pose.orientation.w
         
         (_, _, self.odom_theta) = euler_from_quaternion([qx, qy, qz, qw])
+        
+        self.odom_x = msg.pose.pose.position.x #+ self.offset_odom * np.cos(self.odom_theta)
+        self.odom_y = msg.pose.pose.position.y #+ self.offset_odom * np.sin(self.odom_theta)
         
         self.odom = (self.odom_x, self.odom_y, self.odom_theta)
 
@@ -268,31 +290,55 @@ class OpenAIControl(Node):
             if abs(self.odom[0]-self.goal[0]) < self.x_err and abs(self.odom[1]-self.goal[1]) < self.x_err and abs(self.odom[2]-self.goal[2]) < self.theta_err:
                 self.get_logger().info("[Odom] Goal reached!")
                 self.goal_prev = self.goal # Update old goal
+                
+                # Set velocities to 0
+                cmd = Twist()
+                cmd.linear.x = 0.0
+                cmd.linear.y = 0.0
+                cmd.angular.z = 0.0
+                
+                self.publisher_cmd.publish(cmd)
 
         # Compute control commands
-        if (self.odom != (None, None, None) and self.goal != (None, None, None) and
-                self.path != None and self.ranges != None and self.goal_prev != self.goal):
+        if (self.odom != (None, None, None) and self.goal != (None, None, None) and #and self.ranges != None 
+                self.path != None and self.goal_prev != self.goal):
             
+            ### Compute the next point on the path to reach ###
+            
+            # 1. Find the closest point on the path to the actual position
+            closest_point = 0
+            min_dist = ((self.path[0][0] - self.odom[0])**2 + (self.path[0][1] - self.odom[1])**2)**0.5
+            for i in range(len(self.path)):
+                dist = ((self.path[i][0] - self.odom[0])**2 + (self.path[i][1] - self.odom[1])**2)**0.5
+                if dist < min_dist:
+                    closest_point = i
+            
+            # 2. Set the next point on the path
+            while abs(self.path[closest_point][0] - self.odom[0]) < self.x_err or abs(self.path[closest_point][1] - self.odom[1]) < self.y_err:
+                if closest_point < len(self.path)-1:
+                    closest_point += 1
+                else:
+                    closest_point = len(self.path)-1
+                    break
+            
+            # Create the user request
             ai_user = f"""
             Here the current data:
-            - x_target: {self.path[self.path_counter][0]}
-            - y_target: {self.path[self.path_counter][1]}
-            
             - x_current: {self.odom[0]}
             - y_current: {self.odom[1]}
             - theta_current: {self.odom[2]}
-            """        
-            #- theta_target: {self.path[self.path_counter][2]}
-                        
-            # Add ranges information to the user
-            """
-            for i in range(len(self.ranges)):
-                self.ai_user = self.ai_user + str(self.ranges[i]) + ", "
-            self.ai_user = self.ai_user + ")\n"
-            """
             
-            print("Request " + str(self.iter) + "\n" + ai_user + "\n")
+            - x_target: {self.path[closest_point][0]}
+            - y_target: {self.path[closest_point][1]}
+            """   
+            
+            print("--------------------------------------------------")
+            print("Request " + str(self.iter))
             self.iter += 1
+            print("--------------------------------------------------")
+            print(ai_user)
+            
+            print("Next point on the path: " + str(closest_point) + "\n")
             
             start = time.time()
             
@@ -305,13 +351,19 @@ class OpenAIControl(Node):
                     ]
             )
 
-            cmd_vel = completion.choices[0].message.content
-            print("Response: " + cmd_vel)
+            # Compute computation time 
+            end = time.time()
+            diff = end - start
+            print("Time = " + str(diff) + " s\n")
             
-            # Clear the messages
+            # Get the response
+            cmd_vel = completion.choices[0].message.content
+            print("Response: " + cmd_vel + "\n")
+            
+            ### Clear the response ###
             
             # Remove characters that are not numbers or dots (for decimal representation)
-            cmd_vel = re.sub(r'[^0-9.]', ' ', cmd_vel)
+            cmd_vel = re.sub(r'[^0-9.-]', ' ', cmd_vel)
             
             # Split for empty spaces
             cmd_vel = cmd_vel.split()
@@ -321,22 +373,17 @@ class OpenAIControl(Node):
                 if el == "":
                     cmd_vel.remove(el)
             
-            print("v_x = " + cmd_vel[0] + " m/s\n" +
-                  "v_y = " + cmd_vel[1] + " m/s\n" +
-                  "w_z = " + cmd_vel[2] + " rad/s\n")
-
-            # Compute computation time 
-            end = time.time()
-            diff = end - start
-            print("Time = " + str(diff) + " s")
-            
             # Publish control commands
             cmd = Twist()
             cmd.linear.x = float(cmd_vel[0])
             cmd.linear.y = float(cmd_vel[1])
             cmd.angular.z = float(cmd_vel[2])
+            
+            print("v_x = " + str(cmd.linear.x) + " m/s\n" +
+                  "v_y = " + str(cmd.linear.y) + " m/s\n" +
+                  "w_z = " + str(cmd.angular.z) + " rad/s\n")
+             
             self.publisher_cmd.publish(cmd)
-            self.path_counter += 1
             
 def main(args=None):
     # Initialize the node
