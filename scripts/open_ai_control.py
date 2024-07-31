@@ -3,6 +3,7 @@
 from openai import OpenAI
 
 import time
+import re
 
 import rclpy
 from rclpy.node import Node
@@ -14,16 +15,81 @@ from tf_transformations import euler_from_quaternion, quaternion_from_euler
 
 client = OpenAI()
 
-ai_system = ("You are model to compute a safe control commands for a mobile robot in a static environment, endowed with LiDAR.\n" + 
-             "The control commands must be: linear velocities along x and y axis (m/s), and angular velocity (rad/s) around z axis.\n" +
-             "You know your actual pose, your goal pose and the data given form the laser scanner.")
-print(ai_system)
+### PID ###
 
-ai_user = ("Given the time step, thecurrent pose, the goal pose and the laser data of a mobile robot in a static environment, " +
-           "you must compute the control commands as linear velocities along x and y axis (m/s), and angular velocity (rad/s) around z axis.\n" +
-           "Return the control commands as 3 variables: linear_x linear_y angular_z\n" +
-           "Return the result without any explanation as: linear_x linear_y angular_z")
-print(ai_user)
+# Proportional gains
+Kp_x = 1.0
+Kp_y = 1.0
+Kp_theta = 1.0
+
+# Integral gains
+#Ki_x = 0.0
+#Ki_y = 0.0
+#Ki_theta = 0.0
+
+# Derivative gains
+#Kd_x = 0.0
+#Kd_y = 0.0
+#Kd_theta = 0.0
+
+# Time step
+dt = 0.5
+
+# Target
+x_target = None
+y_target = None
+theta_target = None
+
+# Current position
+x_current = None
+y_current = None
+theta_current = None
+
+pid_prompt = f"""
+You are controlling a unicycle robot using a PID controller with only Proportional term. 
+The robot needs to achieve the following velocities:
+
+- Linear velocity along x-axis (m/s)
+- Linear velocity along y-axis (m/s)
+- Angular velocity about z-axis (rad/s)
+
+The current positions and orientation of the robot are:
+- Current x position: x_current in meters
+- Current y position: y_current in meters
+- Current theta orientation: theta_current in radians
+
+The target positions and orientation of the robot are:
+- Target x position: x_target in meters
+- Target y position: y_target in meters
+- Target orientation (theta): atan2(y_target - y_current, x_target - x_current) in radians
+
+Use the following gain parameters to compute the velocities:
+- Proportional x-axis gain (Kp_x): {Kp_x}
+- Proportional y-axis gain (Kp_y): {Kp_y}
+- Proportional theta-axis gain (Kp_theta): {Kp_theta}
+
+The time step (dt) is {dt} seconds.
+
+Please calculate the errors:
+- Error in x position: e_x = x_target - x_current
+- Error in y position: e_y = y_target - y_current
+- Error in orientation: e_theta = atan2(e_y, e_x) - theta_current
+
+Use these errors to compute the following terms:
+- Proportional x-axis term: P_x = {Kp_x} * e_x
+- Proportional y-axis term: P_y = {Kp_y} * e_y
+- Proportional theta-axis term: P_theta = {Kp_theta} * atan2(sin(e_theta), cos(e_theta))
+
+Finally, provide the control outputs (velocities) as:
+- Linear velocity along x: v_x = P_x 
+- Linear velocity along y: v_y = P_y 
+- Angular velocity about z: omega_z = P_theta
+
+Provide the results without any extra words in the format: v_x v_y omega_z
+"""
+
+ai_system = pid_prompt
+print(ai_system)
 
 class OpenAIControl(Node):
 
@@ -31,6 +97,7 @@ class OpenAIControl(Node):
         super().__init__('open_ai_control')
         
         # Private variables
+        self.iter = 0
         
         # Odometry
         self.odom_x = None
@@ -39,7 +106,7 @@ class OpenAIControl(Node):
         self.odom = (self.odom_x, self.odom_y, self.odom_theta)
         self.x_err = 0.5
         self.y_err = 0.5
-        self.theta_err = 1
+        self.theta_err = 1.0
         
         # Goal
         self.goal_x = None
@@ -55,7 +122,8 @@ class OpenAIControl(Node):
         self.compute_path = False 
         self.costmap = None
         self.path = None
-        self.path_time = None
+        self.path_percentage = 10
+        self.path_counter = 1
         
         # Time step
         self.path_time_step = 1
@@ -80,50 +148,111 @@ class OpenAIControl(Node):
             'goal_pose',
             self.goal_pose_callback,
             10)
-        
-        # Get goal values
-        self.subscription_goal = self.create_subscription(
-            Pose,
-            'goal',
-            self.goal_callback,
-            10)
-        
-        # Get costmap
-        self.subscription_costmap = self.create_subscription(
-            OccupancyGrid,
-            'global_costmap/costmap',
-            self.costmap_callback,
-            10
-        )
-        
-        """
+    
         # Get plan
         self.subscription_plan = self.create_subscription(
             Path,
-            'plan',
+            'mobile_robot_ai/plan',
             self.plan_callback,
             10
         )
-        """
         
-        # Publisher for the path
-        self.publisher_path = self.create_publisher(Path, "/plan", 10)
-        
-        # Publisher for the trajectory
-        self.publisher_trajectory = self.create_publisher(PoseStamped, "/trajectory", 10)
-        
+        # Publisher for the plan
+        self.publisher_plan = self.create_publisher(Path, "/plan", 10)
+
         # Publisher for the control
         self.publisher_cmd = self.create_publisher(Twist, "/cmd_vel", 10)
         
     def ranges_callback(self, msg):
-        self.ranges = msg.data
-        #self.get_logger().info("[Ranges] I heard new values")
-        # TODO: check if still receiving data
+        self.ranges = []
         
+        # Clean infinite values
+        for i in range(len(msg.data)):
+            if msg.data[i] != float('inf'):
+                self.ranges.append(msg.data[i])
+    
+    def goal_pose_callback(self, msg):
+        x = msg.pose.position.x
+        y = msg.pose.position.y
+        z = msg.pose.position.z
+        
+        qx = msg.pose.orientation.x
+        qy = msg.pose.orientation.y
+        qz = msg.pose.orientation.z
+        qw = msg.pose.orientation.w
+        
+        (_, _, theta) = euler_from_quaternion([qx, qy, qz, qw])
+        
+        # Update new goal
+        if self.goal[0] != x or self.goal[1] != y or self.goal[2] != theta:
+            self.goal = (x, y, theta) 
+            self.get_logger().info("[Goal Pose] I heard new goal: (" + str(x) + ", " + str(y) + ", " + str(theta) + ")")
+    
+    def plan_callback(self, msg):
+        self.get_logger().info("[Plan] I heard new plan: " + str(len(msg.poses)) + " waypoints")
+        #self.path = msg.poses
+        self.path = []
+        
+        # Choose a step to take equidistant waypoints
+        num_points = len(msg.poses) / 100 * self.path_percentage
+        step = int(len(msg.poses) / num_points)
+        
+        # Add intermediate waypoints
+        i = 0
+        while i in range(len(msg.poses)):
+            x = msg.poses[i].pose.position.x
+            y = msg.poses[i].pose.position.y
+            
+            qx = msg.poses[i].pose.orientation.x
+            qy = msg.poses[i].pose.orientation.y
+            qz = msg.poses[i].pose.orientation.z
+            qw = msg.poses[i].pose.orientation.w
+            
+            (_, _, theta) = euler_from_quaternion([qx, qy, qz, qw])
+            
+            self.path.append((x, y, theta))
+            i += step
+        
+        # Add last waypoint
+        x = msg.poses[-1].pose.position.x
+        y = msg.poses[-1].pose.position.y
+        
+        qx = msg.poses[-1].pose.orientation.x
+        qy = msg.poses[-1].pose.orientation.y
+        qz = msg.poses[-1].pose.orientation.z
+        qw = msg.poses[-1].pose.orientation.w
+        
+        (_, _, theta) = euler_from_quaternion([qx, qy, qz, qw])
+            
+        self.path.append((x, y, theta))
+        self.path_counter = 1
+        
+        # Publish the new plan
+        plan = Path()
+        plan.header.frame_id = 'map'
+        
+        for i in range(len(self.path)):
+            waypoint = PoseStamped()
+            waypoint.header.frame_id = 'map'
+            
+            waypoint.pose.position.x = self.path[i][0]
+            waypoint.pose.position.y = self.path[i][1]
+            
+            (qx, qy, qz, qw) = quaternion_from_euler(0.0, 0.0, self.path[i][2])
+                    
+            waypoint.pose.orientation.x = qx
+            waypoint.pose.orientation.y = qy
+            waypoint.pose.orientation.z = qz
+            waypoint.pose.orientation.w = qw
+            
+            plan.poses.append(waypoint)
+        
+        self.publisher_plan.publish(plan)
+        self.get_logger().info("[Plan] Published new plan: " + str(len(plan.poses)) + " waypoints")
+             
     def odom_callback(self, msg):
         self.odom_x = msg.pose.pose.position.x
         self.odom_y = msg.pose.pose.position.y
-        #z = msg.pose.pose.position.z
         
         qx = msg.pose.pose.orientation.x
         qy = msg.pose.pose.orientation.y
@@ -133,109 +262,73 @@ class OpenAIControl(Node):
         (_, _, self.odom_theta) = euler_from_quaternion([qx, qy, qz, qw])
         
         self.odom = (self.odom_x, self.odom_y, self.odom_theta)
-        
+
+        # Check if the goal has been reached
         if self.goal != (None, None, None) and self.goal_prev != self.goal:
             if abs(self.odom[0]-self.goal[0]) < self.x_err and abs(self.odom[1]-self.goal[1]) < self.x_err and abs(self.odom[2]-self.goal[2]) < self.theta_err:
-                print("Goal reached!")
+                self.get_logger().info("[Odom] Goal reached!")
                 self.goal_prev = self.goal # Update old goal
-            
-        # TODO: Check if still receiving data
-        #self.get_logger().info("[Odom] I heard new pose: (" + str(x) + ", " + str(y) + ", " + str(theta) + ")")
 
-    def goal_pose_callback(self, msg):
-        x = msg.pose.position.x
-        y = msg.pose.position.y
-        z = msg.pose.position.z
-        
-        qx = msg.pose.pose.orientation.x
-        qy = msg.pose.pose.orientation.y
-        qz = msg.pose.pose.orientation.z
-        qw = msg.pose.pose.orientation.w
-        
-        (roll, pitch, theta) = euler_from_quaternion([qx, qy, qz, qw])
-        
-        self.get_logger().info("[Goal Pose] I heard new goal: (" + str(x) + ", " + str(y) + ", " + str(theta) + ")")
-    
-    def goal_callback(self, msg):
-        x = msg.position.x
-        y = msg.position.y
-        z = msg.position.z
-        
-        qx = msg.orientation.x
-        qy = msg.orientation.y
-        qz = msg.orientation.z
-        qw = msg.orientation.w
-        
-        (_, _, theta) = euler_from_quaternion([qx, qy, qz, qw])
-        
-        if self.goal_x != x or self.goal_y != y or self.goal_theta != theta:
-            self.goal_x = x
-            self.goal_y = y
-            self.goal_theta = theta
-            self.goal = (x, y, theta) # Update new goal
-            self.get_logger().info("[Goal] I heard new goal: (" + str(x) + ", " + str(y) + ", " + str(theta) + ")")
-            self.compute_path = True
-
-        if self.odom != None and self.ranges != None:
-            print("[Odom] Current pose: (" + str(self.odom[0]) + ", " + str(self.odom[1]) + ", " + str(self.odom[2]) + ")")
-            global ai_user
-            #print("System = \n" + str(ai_system) + "\n")
+        # Compute control commands
+        if (self.odom != (None, None, None) and self.goal != (None, None, None) and
+                self.path != None and self.ranges != None and self.goal_prev != self.goal):
             
-            # Add goal and pose information to the user
-            self.ai_user = ai_user + ("Here the updated data: " +
-                                "Time step: " + str(self.path_time_step) + " s\n" +
-                                "Goal: (" + str(self.goal[0]) + ", " + str(self.goal[1]) + ", " + str(self.goal[2]) + ")\n" +
-                                "Pose: (" + str(self.odom[0]) + ", " + str(self.odom[1]) + ", " + str(self.odom[2]) + ")\n" +
-                                "Ranges: ("
-                                )
+            ai_user = f"""
+            Here the current data:
+            - x_target: {self.path[self.path_counter][0]}
+            - y_target: {self.path[self.path_counter][1]}
             
+            - x_current: {self.odom[0]}
+            - y_current: {self.odom[1]}
+            - theta_current: {self.odom[2]}
+            """        
+            #- theta_target: {self.path[self.path_counter][2]}
+                        
             # Add ranges information to the user
+            """
             for i in range(len(self.ranges)):
                 self.ai_user = self.ai_user + str(self.ranges[i]) + ", "
             self.ai_user = self.ai_user + ")\n"
+            """
             
-            #print("Request = \n" + str(ai_user) + "\n")
+            print("Request " + str(self.iter) + "\n" + ai_user + "\n")
+            self.iter += 1
             
             start = time.time()
-
-            """
+            
             completion = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 #model="gpt-4o-mini",
                 messages=[
-                        #{"role": "system", "content": ai_system},
-                        {"role": "user", "content": self.ai_user}
+                        {"role": "system", "content": ai_system},
+                        {"role": "user", "content": ai_user}
                     ]
             )
 
             cmd_vel = completion.choices[0].message.content
-            print("Controls (x, y, theta) = " + cmd_vel)
+            print("Response: " + cmd_vel)
             
-            # Clear the message
-            #cmd_vel = completion.choices[0].message.content.replace("[", "").replace("]", "").replace(" ", "").split(",")
-            if "," in cmd_vel:
-                cmd_vel = cmd_vel.replace(",", "")
-            if "(" in cmd_vel:
-                cmd_vel = cmd_vel.replace("(", "")
-            if ")" in cmd_vel:
-                cmd_vel = cmd_vel.replace(")", "")
-            if "[" in cmd_vel:
-                cmd_vel = cmd_vel.replace("[", "")
-            if "]" in cmd_vel:
-                cmd_vel = cmd_vel.replace("]", "")
-                
-            cmd_vel = completion.choices[0].message.content.split(" ")
- 
-            print("Linear velocity x = " + cmd_vel[0] + " m/s\n" +
-                  "Linear velocity y = " + cmd_vel[1] + " m/s\n" +
-                  "Angular velocity z = " + cmd_vel[2] + " rad/s\n")
+            # Clear the messages
             
+            # Remove characters that are not numbers or dots (for decimal representation)
+            cmd_vel = re.sub(r'[^0-9.]', ' ', cmd_vel)
+            
+            # Split for empty spaces
+            cmd_vel = cmd_vel.split()
+            
+            # Remove empty elements
+            for el in cmd_vel:
+                if el == "":
+                    cmd_vel.remove(el)
+            
+            print("v_x = " + cmd_vel[0] + " m/s\n" +
+                  "v_y = " + cmd_vel[1] + " m/s\n" +
+                  "w_z = " + cmd_vel[2] + " rad/s\n")
+
+            # Compute computation time 
             end = time.time()
             diff = end - start
-
-            # Print time in milliseconds
             print("Time = " + str(diff) + " s")
-            self.path_time_step = diff
             
             # Publish control commands
             cmd = Twist()
@@ -243,81 +336,8 @@ class OpenAIControl(Node):
             cmd.linear.y = float(cmd_vel[1])
             cmd.angular.z = float(cmd_vel[2])
             self.publisher_cmd.publish(cmd)
-            """
-
-    def costmap_callback(self, msg):
-        if self.goal != (None, None, None) and self.odom != (None, None, None):
-            if self.goal_prev != self.goal and self.costmap != msg.data: 
-                if self.compute_path == True: 
-                    self.costmap = msg.data
-                    #print(self.costmap)
-                    
-                    self.path = Path()
-                    self.path.header.frame_id = 'map'
-                    #self.path.header.stamp = self.get_clock().now().to_msg()
-                    
-                    #pose.header.stamp = self.get_clock().now().to_msg()
-                        
-                    steps = 100
-                    for i in range(steps):
-                        waypoint = PoseStamped()
-                        waypoint.header.frame_id = 'map'
-                        waypoint.pose.position.x = self.odom[0] + (self.goal[0]-self.odom[0]) / steps * i
-                        waypoint.pose.position.y = self.odom[1] + (self.goal[1]-self.odom[1]) / steps * i
-                        
-                        self.path.poses.append(waypoint)
-                    
-                    # Overwrite last waypoint
-                    """
-                    waypoint = PoseStamped()
-                    waypoint.header.frame_id = ''
-                    waypoint.pose.position.x = self.goal[0]
-                    waypoint.pose.position.y = self.goal[1]
-                    
-                    (qx, qy, qz, qw) = quaternion_from_euler(0.0, 0.0, self.odom_theta)
-                    
-                    waypoint.pose.orientation.x = qx
-                    waypoint.pose.orientation.y = qy
-                    waypoint.pose.orientation.z = qz
-                    waypoint.pose.orientation.w = qw
-                    
-                    self.path.poses.append(waypoint)
-                    """
-                        
-                    """
-                    for i in range(len(self.costmap)):
-                        waypoint = PoseStamped()
-                        waypoint.header.frame_id = ''
-                        #pose.header.stamp = self.get_clock().now().to_msg()
-                        
-                        waypoint.pose.position.x = (self.goal_x)
-                        waypoint.pose.position.y = self.costmap[i]
-                        
-                        self.path.poses.append(waypoint)
-                    """
-                    
-                    self.publisher_path.publish(self.path)
-                    self.path_time = self.get_clock().now().to_msg().sec
-                
-                #print(self.path_time)
-                self.compute_path = False
-                
-                current_time = self.get_clock().now().to_msg().sec
-                print("Path time = " + str(self.path_time))
-                print("Current time = " + str(current_time))
-                print("Time difference = " + str(abs(self.path_time - current_time)))
-                self.publisher_trajectory.publish(self.path.poses[int(abs(self.path_time - current_time))])
-                #print(self.path)
-    
-    """
-    def plan_callback(self, msg):
-        if self.path != None and self.path_time != None:
-            pass
-    """
+            self.path_counter += 1
             
-            
-            
-     
 def main(args=None):
     # Initialize the node
     rclpy.init(args=args)
