@@ -5,6 +5,7 @@ from openai import OpenAI
 import time
 import re
 import numpy as np 
+import math
 
 import rclpy
 from rclpy.node import Node
@@ -19,13 +20,18 @@ client = OpenAI()
 ### PID ###
 
 # Proportional gains
-Kp_v = 0.5
-Kp_w = 0.5
+Kp_v = 0.2
+Kp_w = 0.1
 
-Kp_x = 1.0
-Kp_y = 1.0
-Kp_theta = 1.0
+# Integral gains
+Ki_v = 0.0
+Ki_w = 0.0
 
+# Derivative gains
+Kd_v = 0.0
+Kd_w = 0.0
+
+# Constrains
 v_min = -0.5
 v_max = 0.5
 w_min = -0.5
@@ -48,15 +54,11 @@ dw_max = 3.14
 dt = 0.8
 
 pid_prompt = f"""
-You are controlling a unicycle robot:
-- dx = v * cos(theta)
-- dy = v * sin(theta)
-- dtheta = w
-
+You are controlling a unicycle robot.
 Using a PID controller, the robot needs to achieve the following velocities:
-- Linear velocity v_x along x-axis [m/s]
-- Linear velocity v_y along y-axis [m/s]
-- Angular velocity w_z about z-axis [rad/s]
+- Linear velocity along x-axis: v_x [m/s]
+- Linear velocity along y-axis: v_y [m/s]
+- Angular velocity about z-axis: w_z [rad/s]
 
 The current positions and orientation of the robot are:
 - Current x position: x_current [m]
@@ -66,50 +68,19 @@ The current positions and orientation of the robot are:
 The target positions and orientation of the robot are:
 - Target x position: x_target [m]
 - Target y position: y_target [m]
-- Target theta orientation: atan2(y_target - y_current, x_target - x_current) [rad]
 
-The desired velocities once the target is reached are:
-- Linear velocity along x-axis: 0 m/s
-- Linear velocity along y-axis: 0 m/s
-- Angular velocity about z-axis: 0 rad/s
+Follow these steps:
+1. Calculate the errors:
+- Error in x position: diff_x = x_target - x_current
+- Error in y position: diff_y = y_target - y_current
+- Error in z orientation: diff_w = atan2(diff_y, diff_x) - theta_current
 
-Use the following gain parameters to compute the velocities:
-- Proportional positionx-axis gain (Kp_x): {Kp_x}
-- Proportional position y-axis gain (Kp_y): {Kp_y}
-- Proportional orientation theta gain (Kp_theta): {Kp_theta}
+2. Compute the control outputs (velocities):
+- Linear velocity along x-axis: v_x = {Kp_v} * diff_x 
+- Linear velocity along y-axis: v_y = {Kp_v} * diff_y 
+- Angular velocity about z-axis: w_z = {Kp_w} * atan2(sin(diff_w), cos(diff_w)) 
 
-Firstly, calculate the errors mantaining the correct sign, also negative values are ok:
-- Error in x position: e_x = x_target - x_current
-- Error in y position: e_y = y_target - y_current
-- Error in orientation: e_theta = atan2(e_y, e_x) - theta_current
-
-Then, compute the proportional terms:
-- Proportional x-axis term: P_x = Kp_x * e_x
-- Proportional y-axis term: P_y = Kp_y * e_y
-- Proportional theta-axis term: P_theta = Kp_theta * atan2(sin(e_theta), cos(e_theta))
-
-Finally, provide the control outputs (velocities), mantaining the correct sign, as:
-- Linear velocity along x: v_x = P_x
-- Linear velocity along y: v_y = P_y
-- Angular velocity about z: w_z = P_theta
-
-Do not use the integral and derivative terms, only the proportional ones.
-
-The acceleration constraints are:
-- Maximum linear acceleration along x-axis and y-axis (a_min): {dv_max}
-- Maximum angular acceleration about z-axis (a_max): {dw_max}
-Consider this information to avoid abrupt linear and angular accelations.
-
-Compute the optimal control velocities to achieve the target position.
-Provide the results, without any extra words, in the format: v_x v_y w_z
-"""
-
-"""
-As constaints consider:
-- Mimimum linear velocity along x-axis and y-axis (v_min): {v_min}
-- Minimum angular velocity about z-axis (w_min): {w_min}
-- Maximum linear velocity along x-axis and y-axis (v_max): {v_max}
-- Maximum angular velocity about z-axis (w_max): {w_max}
+Provide the results (even 0.0 values), without any extra words and headers, in the format (only the numeric values): v_x v_y w_z diff_x diff_y diff_w
 """
 
 ai_system = pid_prompt
@@ -128,10 +99,10 @@ class OpenAIControl(Node):
         self.odom_y = None
         self.odom_theta = None
         self.odom = (self.odom_x, self.odom_y, self.odom_theta)
-        self.x_err = 0.25
-        self.y_err = 0.25
+        self.x_err = 0.1
+        self.y_err = 0.1
         self.theta_err = 1.0
-        self.offset_odom = 0.1
+        self.offset_odom = 0.05
         
         # Goal
         self.goal_x = None
@@ -147,10 +118,30 @@ class OpenAIControl(Node):
         self.compute_path = False 
         self.costmap = None
         self.path = None
-        self.path_percentage = 10
+        self.path_percentage = 20
         
         # Time step
         self.path_time_step = 1
+        
+        # PID
+        self.ai_res_memory = []
+        
+        self.oscillation_v = 0.0
+        self.oscillation_w = 0.0
+        
+        self.oscillation_max_v = 0.1
+        self.oscillation_max_w = 0.15
+        
+        self.T_u_start_v = 0.0
+        self.T_u_end_v = 0.0
+        self.T_u_v = 0.0
+        
+        self.T_u_start_w = 0.0
+        self.T_u_end_w = 0.0
+        self.T_u_w = 0.0
+        
+        self.flag_otime_v = False
+        self.flag_otime_w = False
         
 		# Get ranges values
         self.subscription_ranges= self.create_subscription(
@@ -273,6 +264,8 @@ class OpenAIControl(Node):
         #self.get_logger().info("[Plan] Published new plan: " + str(len(plan.poses)) + " waypoints")
              
     def odom_callback(self, msg):
+        global Kp_v, Kp_w
+        
         qx = msg.pose.pose.orientation.x
         qy = msg.pose.pose.orientation.y
         qz = msg.pose.pose.orientation.z
@@ -280,8 +273,8 @@ class OpenAIControl(Node):
         
         (_, _, self.odom_theta) = euler_from_quaternion([qx, qy, qz, qw])
         
-        self.odom_x = msg.pose.pose.position.x #+ self.offset_odom * np.cos(self.odom_theta)
-        self.odom_y = msg.pose.pose.position.y #+ self.offset_odom * np.sin(self.odom_theta)
+        self.odom_x = msg.pose.pose.position.x# + self.offset_odom * np.cos(self.odom_theta)
+        self.odom_y = msg.pose.pose.position.y# + self.offset_odom * np.sin(self.odom_theta)
         
         self.odom = (self.odom_x, self.odom_y, self.odom_theta)
 
@@ -314,7 +307,7 @@ class OpenAIControl(Node):
                     closest_point = i
             
             # 2. Set the next point on the path
-            while abs(self.path[closest_point][0] - self.odom[0]) < self.x_err or abs(self.path[closest_point][1] - self.odom[1]) < self.y_err:
+            while ((self.path[closest_point][0] - self.odom[0])**2 + (self.path[closest_point][1] - self.odom[1])**2)**0.5 < (self.x_err**2 + self.y_err**2)**0.5:
                 if closest_point < len(self.path)-1:
                     closest_point += 1
                 else:
@@ -322,12 +315,25 @@ class OpenAIControl(Node):
                     break
             
             # Create the user request
+            """
+            ai_user = 
+            Here the previous response (v_x v_y w_z I_x_prev I_y_prev I_theta_prev e_x_prev e_y_prev e_theta_prev):
+            
+            for mem in self.ai_res_memory:
+                ai_user += 
+                {mem}
+                
+            """
+            
             ai_user = f"""
-            Here the current data:
+            
+            Use the following updated data:
+            Position:
             - x_current: {self.odom[0]}
             - y_current: {self.odom[1]}
             - theta_current: {self.odom[2]}
             
+            Target:
             - x_target: {self.path[closest_point][0]}
             - y_target: {self.path[closest_point][1]}
             """   
@@ -338,13 +344,38 @@ class OpenAIControl(Node):
             print("--------------------------------------------------")
             print(ai_user)
             
+            # Compute and print the desired velocities
+            theta_target = math.atan2(self.path[closest_point][1]-self.odom[1], self.path[closest_point][0]-self.odom[0])
+            e_theta = theta_target - self.odom[2]
+            
+            w_des = Kp_w * math.atan2(np.sin(e_theta), np.cos(e_theta))
+            v_x_des = Kp_v * (self.path[closest_point][0] - self.odom[0])
+            v_y_des = Kp_v * (self.path[closest_point][1] - self.odom[1])
+            
+            """
+            1. Calculate the errors:
+            - Error in x position: e_x = x_target - x_current
+            - Error in y position: e_y = y_target - y_current
+            - Error in orientation: e_theta = atan2(e_y, e_x) - theta_current
+
+            2. Compute the control outputs (velocities):
+            - Linear velocity along x-axis: v_x = Kp_x * e_x 
+            - Linear velocity along y-axis: v_y = Kp_y * e_y 
+            - Angular velocity about z-axis: w_z = Kp_theta * atan2(sin(e_theta), cos(e_theta)) 
+            """
+
+            print("Vx des: " + str(v_x_des))
+            print("Vy des: " + str(v_y_des))
+            print("W des: " + str(w_des) + "\n")
+            
             print("Next point on the path: " + str(closest_point) + "\n")
+            
             
             start = time.time()
             
             completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                #model="gpt-4o-mini",
+                #model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[
                         {"role": "system", "content": ai_system},
                         {"role": "user", "content": ai_user}
@@ -358,12 +389,14 @@ class OpenAIControl(Node):
             
             # Get the response
             cmd_vel = completion.choices[0].message.content
+            #cmd_vel = "0.0 0.0 0.0"
             print("Response: " + cmd_vel + "\n")
-            
+            self.ai_res_memory.append(cmd_vel)                
+                
             ### Clear the response ###
             
             # Remove characters that are not numbers or dots (for decimal representation)
-            cmd_vel = re.sub(r'[^0-9.-]', ' ', cmd_vel)
+            cmd_vel = re.sub(r'[^0-9.e-]', ' ', cmd_vel)
             
             # Split for empty spaces
             cmd_vel = cmd_vel.split()
@@ -373,8 +406,45 @@ class OpenAIControl(Node):
                 if el == "":
                     cmd_vel.remove(el)
             
+            # Compute the oscillation
+            """
+            self.oscillation_v = abs((float(cmd_vel[-3])**2 + float(cmd_vel[-2])**2)**0.5)
+            self.oscillation_w = abs(float(cmd_vel[-1]))
+            print("Oscillation v = " + str(self.oscillation_v) + " m")            
+            print("Oscillation w = " + str(self.oscillation_w) + " m")
+            
+            if self.oscillation_v > self.oscillation_max_v:
+                if self.flag_otime_v == False:
+                    self.flag_otime_v = True
+                    self.T_u_start_v = time.time()
+                else:
+                    self.flag_otime_v = False
+                    self.T_u_end_v = time.time()
+                    self.T_u_v = self.T_u_end_v - self.T_u_start_v
+                    print("T_u_v = " + str(self.T_u_v) + " s\n")
+            else: 
+                Kp_v = Kp_v * 2
+            
+            if self.oscillation_w > self.oscillation_max_w:
+                if self.flag_otime_w == False:
+                    self.flag_otime_w = True
+                    self.T_u_start_w = time.time()
+                else:
+                    self.flag_otime_w = False
+                    self.T_u_end_w = time.time()
+                    self.T_u_w = self.T_u_end_w - self.T_u_start_w
+                    print("T_u_w = " + str(self.T_u_w) + " s\n")
+            else:
+                Kp_w = Kp_w * 2
+            """
+            
             # Publish control commands
             cmd = Twist()
+            """
+            cmd.linear.x = v_x_des
+            cmd.linear.y = v_y_des
+            cmd.angular.z = w_des
+            """
             cmd.linear.x = float(cmd_vel[0])
             cmd.linear.y = float(cmd_vel[1])
             cmd.angular.z = float(cmd_vel[2])

@@ -1,0 +1,14 @@
+[PID]
+Kp_v = 0.1
+Kp_w = 0.1
+
+Ki_v = 0.0
+Ki_w = 0.0
+
+Kd_v = 0.0
+Kd_w = 0.0
+
+dt = 0.1
+
+[GOAL]
+goal_threashold = 0.1
