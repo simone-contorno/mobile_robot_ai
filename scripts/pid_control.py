@@ -207,7 +207,8 @@ class Control(Node):
                 cmd.linear.y = v[1]
                 cmd.angular.z = w
                 
-                self.publisher_cmd.publish(cmd)
+                if self.goal_prev !=  self.goal:
+                    self.publisher_cmd.publish(cmd)
 
                 ### Compute control commands computation time ###
                 
