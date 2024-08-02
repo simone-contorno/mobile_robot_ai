@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from mobile_robot_ai import utils 
+from mobile_robot_ai import utils, controls
 
 import os 
 import sys 
@@ -30,12 +30,42 @@ Ki_w = float(parser.get('PID', 'Ki_w'))
 Kd_v = float(parser.get('PID', 'Kd_v'))
 Kd_w = float(parser.get('PID', 'Kd_w'))
 
-class PIDControl(Node):
+# Get GOAL params
+goal_threshold = float(parser.get('GOAL', 'goal_threashold'))
+
+# Get CONTROL params
+control_mode = int(parser.get('CONTROL', 'control_mode'))
+    
+print(f"""
+Configuration parameters:
+Kp_v: {Kp_v}
+Kp_w: {Kp_w}
+
+Ki_v: {Ki_v}
+Ki_w: {Ki_w}
+
+Kd_v: {Kd_v}
+Kd_w: {Kd_w}   
+
+goal_threshold: {goal_threshold}
+""")
+
+if control_mode == 0:
+    print(f"control_mode: {control_mode} (PID)")
+
+if control_mode == 1:
+    print(f"control_mode: {control_mode} (OpenAI)\n")
+    
+### ROS 2 Class ###
+
+class Control(Node):
 
     def __init__(self):
         super().__init__('pid_control')
         
-        # Private variables
+        ### Private variables ###
+        
+        # Iteration counter
         self.iter = 0
         
         # Odometry
@@ -43,13 +73,12 @@ class PIDControl(Node):
         self.offset_odom = 0.05
         
         # Goal
+        self.new_goal = False
         self.goal = (None, None, None)
         self.goal_prev = self.goal
-        self.goal_threshold = float(parser.get('GOAL', 'goal_threashold'))
         
         # Path
         self.path = None
-        self.path_percentage = 20
         
         ### Subscribers ###
         
@@ -97,10 +126,11 @@ class PIDControl(Node):
         # Update new goal
         if self.goal[0] != x or self.goal[1] != y or self.goal[2] != theta:
             self.goal = (x, y, theta) 
+            self.new_goal = True
             self.get_logger().info("[Goal] I heard new goal: (" + str(x) + ", " + str(y) + ", " + str(theta) + ")")
     
     # Path waypoints
-    def plan_callback(self, msg):
+    def plan_callback(self, msg):        
         self.get_logger().info("[Plan] I heard new plan of " + str(len(msg.poses)) + " waypoints")
 
         # Update the path waypoints
@@ -134,7 +164,7 @@ class PIDControl(Node):
         
         # Check if the goal has been reached
         if self.goal != (None, None, None) and self.odom != (None, None, None) and self.goal_prev != self.goal:
-            if math.sqrt(math.pow(self.odom[0]-self.goal[0], 2) + math.pow(self.odom[1]-self.goal[1], 2)) < self.goal_threshold:
+            if math.sqrt(math.pow(self.odom[0]-self.goal[0], 2) + math.pow(self.odom[1]-self.goal[1], 2)) < goal_threshold:
                 self.get_logger().info("[Odom] Goal reached!")
                 self.goal_prev = self.goal # Update old goal
                 
@@ -148,17 +178,22 @@ class PIDControl(Node):
 
             if self.path != None:
                 
+                print("--------------------------------------------------")
+                print("Iteration " + str(self.iter))
+                self.iter += 1
+                print("--------------------------------------------------")
+                
                 start = time.time()
                 
                 ### Compute the next point on the path to reach ###
                 
-                next_point = utils.compute_next_point(self.path, self.odom, self.goal_threshold)
+                next_point = utils.compute_next_point(self.path, self.odom, goal_threshold)
                 print("Next point on the path: " + str(next_point) + "\n")
 
                 ### Compute the PID control ###
                 
-                (v, w) = utils.compute_control_commands(self.odom, self.path[next_point], Kp_v, Kp_w, Ki_v, Ki_w, Kd_v, Kd_w)
-                
+                (v, w) = controls.compute_control_commands(self.odom, self.path[next_point], Kp_v, Kp_w, Ki_v, Ki_w, Kd_v, Kd_w, control_mode=control_mode)
+            
                 print(f"""
                       v_x = {v[0]} [m/s]
                       v_y = {v[0]} [m/s]
@@ -185,7 +220,7 @@ def main(args=None):
     rclpy.init(args=args)
 
 	# Create the node instance
-    minimal_publisher = PIDControl()
+    minimal_publisher = Control()
 
 	# Start the callback function
     rclpy.spin(minimal_publisher)

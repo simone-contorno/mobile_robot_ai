@@ -20,17 +20,3 @@ def compute_next_point(path, odom, threshold):
             break
         
     return next_point
-
-def compute_control_commands(odom, waypoint, Kp_v=0.0, Kp_w=0.0, Ki_v=0.0, Ki_w=0.0, Kd_v=0.0, Kd_w=0.0):
-    # 1. Compute proportional term
-                
-    # Compute and print the desired velocities
-    theta_target = math.atan2(waypoint[1]-odom[1], waypoint[0]-odom[0])
-    e_theta = theta_target - odom[2]
-    
-    v_x = Kp_v * (waypoint[0] - odom[0])
-    v_y = Kp_v * (waypoint[1] - odom[1])
-    v = [v_x, v_y]
-    w = Kp_w * math.atan2(math.sin(e_theta), math.cos(e_theta))
-    
-    return v, w
