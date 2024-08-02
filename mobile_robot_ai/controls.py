@@ -26,7 +26,7 @@ def openAI_api(odom, waypoint, Kp_v=0.0, Kp_w=0.0, Ki_v=0.0, Ki_w=0.0, Kd_v=0.0,
     1. Calculate the errors:
     - Error in x position: diff_x = x_target - x_current
     - Error in y position: diff_y = y_target - y_current
-    - Error in z orientation: diff_w = atan2(diff_y, diff_x) - theta_current
+    - Error in z orientation: diff_w = theta_target - theta_current
     
     2. Compute the control outputs (velocities):
     - Linear velocity along x-axis: v_x = {Kp_v} * diff_x 
@@ -35,6 +35,9 @@ def openAI_api(odom, waypoint, Kp_v=0.0, Kp_w=0.0, Ki_v=0.0, Ki_w=0.0, Kd_v=0.0,
     
     Provide the results (even 0.0 values), without any extra words and headers, in the format (only the numeric values): v_x v_y w_z
     """
+    
+    # Add the theta target to the waypoint
+    theta_target = math.atan2(waypoint[1]-odom[1], waypoint[0]-odom[0])
     
     ai_user = f"""
     Use the following updated data:
@@ -46,6 +49,7 @@ def openAI_api(odom, waypoint, Kp_v=0.0, Kp_w=0.0, Ki_v=0.0, Ki_w=0.0, Kd_v=0.0,
     Target:
     - x_target: {waypoint[0]}
     - y_target: {waypoint[1]}
+    - theta_target: {theta_target}
     """   
     print(ai_user)
     
@@ -78,6 +82,10 @@ def openAI_api(odom, waypoint, Kp_v=0.0, Kp_w=0.0, Ki_v=0.0, Ki_w=0.0, Kd_v=0.0,
     
     v = [float(cmd_vel[0]), float(cmd_vel[1])]
     w = float(cmd_vel[2])
+    
+    # TODO: remove
+    #e_theta = theta_target - odom[2]
+    #w = Kp_w * math.atan2(math.sin(e_theta), math.cos(e_theta))
     
     return v, w
             
