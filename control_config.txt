@@ -1,6 +1,6 @@
 [PID]
 Kp_v = 0.1
-Kp_w = 0.1
+Kp_w = 0.2
 
 Ki_v = 0.0
 Ki_w = 0.0
@@ -12,3 +12,6 @@ dt = 0.1
 
 [GOAL]
 goal_threashold = 0.1
+
+[CONTROL]
+control_mode = 0
