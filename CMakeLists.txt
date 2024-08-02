@@ -48,7 +48,6 @@ ament_python_install_package(${PROJECT_NAME})
 
 # Install Python executables
 install(PROGRAMS
-  scripts/open_ai_control.py
   scripts/pid_control.py
   scripts/set_goal.py
   DESTINATION lib/${PROJECT_NAME}
