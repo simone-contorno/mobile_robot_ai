@@ -35,12 +35,17 @@ public:
         // Plan
         subscription_plan = this->create_subscription<nav_msgs::msg::Path>(
             "mobile_robot_ai/plan", 10, std::bind(&DataSubscriber::plan_callback, this, std::placeholders::_1));
+
+        // Goal
+        subscription_goal = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+            "goal_pose", 10, std::bind(&DataSubscriber::goal_callback, this, std::placeholders::_1));
     }
 
 private:
     // Private subscribers
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_scan;
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr subscription_plan;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr subscription_goal;
 
     // Private publishers
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_ranges;
@@ -48,13 +53,27 @@ private:
 
     // Private variables
     std::vector<float> ranges_;
-    //geometry_msgs::msg::PoseStamped waypoint_;
+
+    bool new_goal = false;
+    geometry_msgs::msg::Pose goal;
 
     std_msgs::msg::Float32MultiArray msg_ranges;
     nav_msgs::msg::Path msg_plan;
     
     /* Create the callback function */
 
+    // Goal
+    void goal_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+    {
+        RCLCPP_INFO(this->get_logger(), "New goal received!");
+        
+        if (goal != msg->pose)
+        {
+            new_goal = true;
+            goal = msg->pose;
+        }
+    }
+    
     // Laser scanner
     void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) 
     {
@@ -116,9 +135,12 @@ private:
             msg_plan.poses.push_back(waypoint_);
 
             // Publish the data
-            publisher_plan->publish(msg_plan);
-
-            RCLCPP_INFO(this->get_logger(), "New plan of %i waypoints published", msg_plan.poses.size());
+            if (new_goal == true)
+            {
+                new_goal = false;
+                publisher_plan->publish(msg_plan);
+                RCLCPP_INFO(this->get_logger(), "New plan of %i waypoints published", msg_plan.poses.size());
+            }
         }
     }
 };
