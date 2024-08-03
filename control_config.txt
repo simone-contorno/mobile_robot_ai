@@ -1,12 +1,12 @@
 [PID]
 Kp_v = 0.1
-Kp_w = 0.2
+Kp_w = 0.1
 
-Ki_v = 0.0
-Ki_w = 0.0
+Ki_v = 0.001
+Ki_w = 0.001
 
-Kd_v = 0.0
-Kd_w = 0.0
+Kd_v = 0.001
+Kd_w = 0.001
 
 dt = 0.1
 
@@ -14,4 +14,10 @@ dt = 0.1
 goal_threashold = 0.1
 
 [CONTROL]
-control_mode = 0
+control_mode = 1
+
+[PATH]
+path_percentage = 50
+
+[AI]
+ai_model = gpt-4o-mini

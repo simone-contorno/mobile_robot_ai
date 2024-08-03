@@ -20,22 +20,30 @@ script_directory = os.path.dirname(os.path.abspath(sys.argv[0]))
 parser = configparser.ConfigParser()
 parser.read_file(open(script_directory + "/control_config.txt"))
 
-# Get PID gains
+# Get PID params
 Kp_v = float(parser.get('PID', 'Kp_v'))
 Kp_w = float(parser.get('PID', 'Kp_w'))
+Kp = (Kp_v, Kp_w)
 
 Ki_v = float(parser.get('PID', 'Ki_v'))
 Ki_w = float(parser.get('PID', 'Ki_w'))
+Ki = (Ki_v, Ki_w)
 
 Kd_v = float(parser.get('PID', 'Kd_v'))
 Kd_w = float(parser.get('PID', 'Kd_w'))
+Kd = (Kd_v, Kd_w)
+
+dt = float(parser.get('PID', 'dt'))
 
 # Get GOAL params
 goal_threshold = float(parser.get('GOAL', 'goal_threashold'))
 
 # Get CONTROL params
 control_mode = int(parser.get('CONTROL', 'control_mode'))
-    
+ 
+# Get AI params
+ai_model = str(parser.get('AI', 'ai_model'))
+   
 print(f"""
 Configuration parameters:
 Kp_v: {Kp_v}
@@ -54,7 +62,8 @@ if control_mode == 0:
     print(f"control_mode: {control_mode} (PID)")
 
 if control_mode == 1:
-    print(f"control_mode: {control_mode} (OpenAI)\n")
+    print(f"control_mode: {control_mode} (OpenAI)")
+    print(f"AI model: {ai_model}")
     
 ### ROS 2 Class ###
 
@@ -64,6 +73,10 @@ class Control(Node):
         super().__init__('pid_control')
         
         ### Private variables ###
+        
+        # PID
+        self.e = (0.0, 0.0, 0.0) # proportional error
+        self.i = (0.0, 0.0, 0.0) # integral error
         
         # Iteration counter
         self.iter = 0
@@ -181,18 +194,30 @@ class Control(Node):
                 print("--------------------------------------------------")
                 print("Iteration " + str(self.iter))
                 self.iter += 1
-                print("--------------------------------------------------")
+                print("--------------------------------------------------\n")
                 
                 start = time.time()
                 
                 ### Compute the next point on the path to reach ###
                 
                 next_point = utils.compute_next_point(self.path, self.odom, goal_threshold)
-                print("Next point on the path: " + str(next_point) + "\n")
+                print("Next point on the path: " + str(next_point))
 
                 ### Compute the PID control ###
+                theta_target = math.atan2(self.path[next_point][1]-self.odom[1], self.path[next_point][0]-self.odom[0])
+                waypoint = (self.path[next_point][0], self.path[next_point][1], theta_target)
                 
-                (v, w) = controls.compute_control_commands(self.odom, self.path[next_point], Kp_v, Kp_w, Ki_v, Ki_w, Kd_v, Kd_w, control_mode=control_mode)
+                print(f"""
+                      odom_x = {self.odom[0]} [m]
+                      odom_y = {self.odom[1]} [m]
+                      odom_theta = {self.odom[2]} [rad]
+                      
+                      goal_x = {waypoint[0]} [m]
+                      goal_y = {waypoint[1]} [m]
+                      goal_theta = {waypoint[2]} [rad]
+                      """)
+                
+                (v, w, self.e, self.i) = controls.compute_control_commands(self.odom, waypoint, Kp, Ki, Kd, dt, self.e, self.i, control_mode=control_mode, ai_model=ai_model)
             
                 print(f"""
                       v_x = {v[0]} [m/s]
