@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from mobile_robot_ai import utils, controls
+from mobile_robot_ai.ai_prompts import *
 
 import os 
 import sys 
@@ -43,7 +44,8 @@ control_mode = int(parser.get('CONTROL', 'control_mode'))
  
 # Get AI params
 ai_model = str(parser.get('AI', 'ai_model'))
-   
+ai_system = str(parser.get('AI', 'ai_system'))
+
 print(f"""
 Configuration parameters:
 Kp_v: {Kp_v}
@@ -64,6 +66,14 @@ if control_mode == 0:
 if control_mode == 1:
     print(f"control_mode: {control_mode} (OpenAI)")
     print(f"AI model: {ai_model}")
+    
+    if ai_system in globals():
+        ai_system = globals()[ai_system]
+    else:
+        ai_system = pid_proportional_only
+        print("No valid AI system provided. PID with only proportional control will be used.")
+    
+    print(f"AI system: {ai_system}")
     
 ### ROS 2 Class ###
 
@@ -217,7 +227,7 @@ class Control(Node):
                       goal_theta = {waypoint[2]} [rad]
                       """)
                 
-                (v, w, self.e, self.i) = controls.compute_control_commands(self.odom, waypoint, Kp, Ki, Kd, dt, self.e, self.i, control_mode=control_mode, ai_model=ai_model)
+                (v, w, self.e, self.i) = controls.compute_control_commands(self.odom, waypoint, Kp, Ki, Kd, dt, self.e, self.i, control_mode=control_mode, ai_model=ai_model, ai_system=ai_system)
             
                 print(f"""
                       v_x = {v[0]} [m/s]
