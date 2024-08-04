@@ -1,5 +1,3 @@
-import math
-
 ### Compute the next point on the path to reach ###
 def compute_next_point(path, odom, threshold):     
     # 1. Find the closest point on the path to the actual position
