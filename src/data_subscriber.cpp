@@ -191,14 +191,16 @@ int main(int argc, char* argv[])
                 try { // Attempt to convert string to float
                     std::stof(valueStr);  
                 } catch (const std::invalid_argument& e) { // Conversion failed due to invalid argument
+                    cout << "Path percentage invalid argument: " << e.what() << endl;
                     valid = false;
                 } catch (const std::out_of_range& e) {  // Conversion failed due to out of range error
+                    cout << "Path percentage out of range: " << e.what() << endl;
                     valid = false;   
                 }
 
                 if (valid == true)
                     path_percentage = std::stof(valueStr);
-                    
+
                 std::cout << key << ": " << path_percentage << std::endl;
             }
         }
