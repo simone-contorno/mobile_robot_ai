@@ -5,12 +5,15 @@
 #include "std_msgs/msg/float32_multi_array.hpp"
 #include "nav_msgs/msg/path.hpp"
 
+#include <fstream>
+#include <string>
+
 //#include "tf2/LinearMath/Quaternion.h"
 //#include "tf2/LinearMath/Matrix3x3.h"
 
 using namespace std;
 
-double path_percentage = 50.0;
+float path_percentage = 50.0;
 
 class DataSubscriber : public rclcpp::Node
 {
@@ -147,6 +150,49 @@ private:
 
 int main(int argc, char* argv[])
 {
+    std::string file = "control_config.txt";
+    std::string key = "path_percentage";
+
+    // Open the file
+    std::ifstream config_file(file);
+
+    // Check if the file was successfully opened
+    if (!config_file.is_open()) {
+        std::cerr << "Error opening file: " << file << std::endl;
+        return 1;
+    }
+    // Read the file line by line
+    std::string line;
+    while (getline(config_file, line)) {
+
+        // Check if the line contains the key
+        size_t pos = line.find(key);
+
+        if (pos != std::string::npos) {
+
+            // Extract the value part
+            size_t start = line.find('=', pos);
+
+            if (start != std::string::npos) {
+
+                // Move to the position after the '=' character
+                start++;
+
+                // Trim any leading whitespace
+                while (start < line.size() && std::isspace(line[start])) {
+                    start++;
+                }
+                
+                // Extract the numeric value as a substring
+                std::string valueStr = line.substr(start);
+
+                // Convert the string value to float
+                path_percentage = std::stof(valueStr);
+                std::cout << key << ": " << path_percentage << std::endl;
+            }
+        }
+    }
+
     // Initialize the node
     rclcpp::init(argc, argv);
     
