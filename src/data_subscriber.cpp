@@ -187,7 +187,18 @@ int main(int argc, char* argv[])
                 std::string valueStr = line.substr(start);
 
                 // Convert the string value to float
-                path_percentage = std::stof(valueStr);
+                bool valid = true;
+                try { // Attempt to convert string to float
+                    std::stof(valueStr);  
+                } catch (const std::invalid_argument& e) { // Conversion failed due to invalid argument
+                    valid = false;
+                } catch (const std::out_of_range& e) {  // Conversion failed due to out of range error
+                    valid = false;   
+                }
+
+                if (valid == true)
+                    path_percentage = std::stof(valueStr);
+                    
                 std::cout << key << ": " << path_percentage << std::endl;
             }
         }
