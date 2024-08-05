@@ -8,11 +8,13 @@ import sys
 import time
 import configparser
 import math
+import signal
 
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped, Twist
+from rcl_interfaces.msg import Log
 
 from tf_transformations import euler_from_quaternion
 
@@ -74,7 +76,10 @@ if control_mode == 1:
         print("No valid AI system provided. PID with only proportional control will be used.")
     
     print(f"AI system: {ai_system}")
-    
+
+### Log prefix ###
+log_prefix = "mobile_robot_ai/"
+
 ### ROS 2 Class ###
 
 class Control(Node):
@@ -131,6 +136,12 @@ class Control(Node):
         
         # Control commands
         self.publisher_cmd = self.create_publisher(Twist, "/cmd_vel", 10)
+        
+        # Logs
+        self.publisher_log = self.create_publisher(Log, "/rosout", 10)
+        
+        # Manage CTRL+C command
+        signal.signal(signal.SIGINT, self.signal_handler)
     
     ### Callbacks ###
     
@@ -251,6 +262,33 @@ class Control(Node):
                 diff = end - start
                 print("Time = " + str(diff) + " [s]\n")    
                 
+                ### Publish logs ###
+                log = Log()
+                log.name = log_prefix + "v_x"
+                log.msg = str(v[0])
+                self.publisher_log.publish(log)
+                
+                log = Log()
+                log.name = log_prefix + "v_y"
+                log.msg = str(v[1])
+                self.publisher_log.publish(log)
+                
+                log = Log()
+                log.name = log_prefix + "w_z"
+                log.msg = str(w)
+                self.publisher_log.publish(log)
+    
+    def signal_handler(self, signum, frame):
+        cmd = Twist()
+        cmd.linear.x = 0.0
+        cmd.linear.y = 0.0
+        cmd.angular.z = 0.0
+        
+        self.publisher_cmd.publish(cmd)
+        
+        # Terminate 
+        rclpy.shutdown()
+    
 def main(args=None):
     # Initialize the node
     rclpy.init(args=args)
