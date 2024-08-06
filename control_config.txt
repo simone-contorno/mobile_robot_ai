@@ -11,7 +11,7 @@ Kd_w = 0.0
 dt = 0.1
 
 [GOAL]
-goal_threashold = 0.5
+goal_threashold = 0.1
 
 [CONTROL]
 control_mode = 0

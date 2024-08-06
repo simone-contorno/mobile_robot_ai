@@ -11,6 +11,7 @@ def compute_next_point(path, odom, threshold):
     # 2. Set the next point on the path
     euler_dist = ((path[next_point][0] - odom[0])**2 + (path[next_point][1] - odom[1])**2)**0.5
     while euler_dist < threshold:
+        euler_dist = ((path[next_point][0] - odom[0])**2 + (path[next_point][1] - odom[1])**2)**0.5
         if next_point < len(path)-1:
             next_point += 1
         else:

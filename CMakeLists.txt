@@ -13,6 +13,7 @@ endif()
 # Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -28,7 +29,7 @@ if(BUILD_TESTING)
 endif()
 
 add_executable(data_subscriber src/data_subscriber.cpp)
-ament_target_dependencies(data_subscriber rclcpp sensor_msgs geometry_msgs nav_msgs)
+ament_target_dependencies(data_subscriber rclcpp sensor_msgs geometry_msgs nav_msgs ament_index_cpp)
 
 install(DIRECTORY 
   launch 
@@ -51,10 +52,16 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/pid_control.py
   scripts/set_goal.py
+  run.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # Install additional files
+install(FILES
+  control_config.txt
+  DESTINATION share/${PROJECT_NAME} 
+)
+
 install(FILES
   control_config.txt
   DESTINATION lib/${PROJECT_NAME}

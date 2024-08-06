@@ -8,8 +8,7 @@
 #include <fstream>
 #include <string>
 
-//#include "tf2/LinearMath/Quaternion.h"
-//#include "tf2/LinearMath/Matrix3x3.h"
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 using namespace std;
 
@@ -148,19 +147,56 @@ private:
     }
 };
 
+
 int main(int argc, char* argv[])
 {
-    std::string file = "control_config.txt";
+    std::string package_share_directory;
+    try {
+        // Get the package share directory
+        std::string package_name = "mobile_robot_ai";
+        package_share_directory = ament_index_cpp::get_package_share_directory(package_name);
+
+    } catch (const std::exception &e) {
+        std::cerr << "Error locating package directory: " << e.what() << std::endl;
+        return 1;
+    }
+
+    std::string file = package_share_directory + "/control_config.txt";
     std::string key = "path_percentage";
 
     // Open the file
-    std::ifstream config_file(file);
+    std::ifstream config_file;
+    try {
+        config_file.open(file, std::ios::in);
+    }
+    catch(const std::exception& e) {
+        std::cerr << e.what() << '\n';
+    }
 
     // Check if the file was successfully opened
     if (!config_file.is_open()) {
         std::cerr << "Error opening file: " << file << std::endl;
+        
+        // Check specific error conditions
+        if (errno) {
+            std::cerr << "Error: " << strerror(errno) << std::endl;
+        }
+
+        if (config_file.fail()) {
+            std::cerr << "General failure error." << std::endl;
+        }
+        
+        if (config_file.bad()) {
+            std::cerr << "Read/write error on i/o operation." << std::endl;
+        }
+
+        if (config_file.eof()) {
+            std::cerr << "End-of-File reached on input operation." << std::endl;
+        }
+        
         return 1;
     }
+    
     // Read the file line by line
     std::string line;
     while (getline(config_file, line)) {
@@ -200,11 +236,10 @@ int main(int argc, char* argv[])
 
                 if (valid == true)
                     path_percentage = std::stof(valueStr);
-
-                std::cout << key << ": " << path_percentage << std::endl;
             }
         }
     }
+    std::cout << key << ": " << path_percentage << std::endl;
 
     // Initialize the node
     rclcpp::init(argc, argv);

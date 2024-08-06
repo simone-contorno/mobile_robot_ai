@@ -10,7 +10,7 @@ client = OpenAI()
 def openAI_api(odom, waypoint, Kp, Ki, Kd, dt, e, i, ai_model, ai_system):
     
     ### AI user prompt ###
-    
+
     ai_user = f"""
     Gains:
     - Kp_v: {Kp[0]}

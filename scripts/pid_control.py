@@ -107,6 +107,7 @@ class Control(Node):
         
         # Path
         self.path = None
+        self.path_point = 0
         
         ### Subscribers ###
         
@@ -165,8 +166,9 @@ class Control(Node):
     
     # Path waypoints
     def plan_callback(self, msg):        
-        self.get_logger().info("[Plan] I heard new plan of " + str(len(msg.poses)) + " waypoints")
-
+        self.get_logger().info("[Plan] I heard new plan of " + str(len(msg.poses)) + " waypoints\n")
+        self.path_point = 0
+        
         # Update the path waypoints
         self.path = []
         for i in range(len(msg.poses)):
@@ -222,11 +224,14 @@ class Control(Node):
                 ### Compute the next point on the path to reach ###
                 
                 next_point = utils.compute_next_point(self.path, self.odom, goal_threshold)
-                print("Next point on the path: " + str(next_point))
+                
+                if next_point > self.path_point:
+                    self.path_point = next_point
+                    print("Next point on the path: " + str(next_point))
 
                 ### Compute the PID control ###
-                theta_target = math.atan2(self.path[next_point][1]-self.odom[1], self.path[next_point][0]-self.odom[0])
-                waypoint = (self.path[next_point][0], self.path[next_point][1], theta_target)
+                theta_target = math.atan2(self.path[self.path_point][1]-self.odom[1], self.path[self.path_point][0]-self.odom[0])
+                waypoint = (self.path[self.path_point][0], self.path[self.path_point][1], theta_target)
                 
                 print(f"""
                       odom_x = {self.odom[0]} [m]
@@ -303,7 +308,7 @@ def main(args=None):
     minimal_publisher.destroy_node()
     
     # Terminate 
-    rclpy.shutdown()
+    #rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
