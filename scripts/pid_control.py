@@ -293,6 +293,7 @@ class Control(Node):
         
         # Terminate 
         rclpy.shutdown()
+        exit()
     
 def main(args=None):
     # Initialize the node
