@@ -37,7 +37,7 @@ The project aims to explore whether Large Language Models (which are typically n
 <a name="how"></a>
 # How it works
 
-The program subscribes to goal pose, laser scanner, and path topics. The path is then modified by altering a user-defined percentage of points and republished on a different topic. This modification reduces the path's complexity, which is necessary because making requests through the API takes approximately 2 seconds. <br>
+The program subscribes to goal pose, laser scanner, and path topics. The path is then modified by altering a user-defined percentage of points and republished on a different topic. This modification reduces the path's complexity, which is necessary because making requests through the API takes approximately 1-2 seconds. <br>
 Then, the control inputs are computed using a PID controller, either by performing direct calculations or by allowing the AI to generate them.
 
 <a name="pre"></a>
