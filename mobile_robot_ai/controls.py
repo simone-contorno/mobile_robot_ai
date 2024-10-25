@@ -3,14 +3,30 @@ from mobile_robot_ai.ai_prompts import *
 import math
 import re
 
+# Parse configuration file #
+import configparser, os, sys
+script_directory = os.path.dirname(os.path.abspath(sys.argv[0])) 
+parser = configparser.ConfigParser()
+parser.read_file(open(script_directory + "/control_config.txt"))
+
+llama_api = str(parser.get('AI', 'llama_api'))
+
 ### OpenAI API ###
-
-client = OpenAI()
-
 def openAI_api(odom, waypoint, Kp, Ki, Kd, dt, e, i, ai_model, ai_system):
     
+    ### AI client ####
+    if "llama" in ai_model:
+        client = OpenAI(
+            api_key = llama_api,
+            base_url = "https://api.llama-api.com"
+        )
+    elif "gpt" in ai_model:
+        client = OpenAI()
+    else:
+        print("Model not valid.")
+        exit()
+        
     ### AI user prompt ###
-
     ai_user = f"""
     Gains:
     - Kp_v: {Kp[0]}
