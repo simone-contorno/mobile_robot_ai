@@ -48,6 +48,45 @@ control_mode = int(parser.get('CONTROL', 'control_mode'))
 ai_model = str(parser.get('AI', 'ai_model'))
 ai_system = str(parser.get('AI', 'ai_system'))
 
+# Get ML params
+dataset_path = str(parser.get('ML', 'dataset_path'))
+dataset = bool(parser.get('ML', 'dataset'))
+
+# If the Linear Regression is enabled, dataset is not created
+if control_mode == 2:
+    dataset = False
+
+if dataset == True:
+    print("Dataset enabled")
+    
+    # Get dataset path
+    ds_path = dataset_path + "/Datasets"
+    
+    # Check if the Datasets folder exists
+    if not os.path.exists(ds_path):
+        os.makedirs(ds_path)
+    
+    # Get current date and time
+    date = time.strftime("%Y-%m-%d_%H-%M-%S")
+
+    # Creat sub-folder
+    ds_path = ds_path + "/" + date + "_dataset"
+    if not os.path.exists(ds_path):
+        os.makedirs(ds_path)
+    
+    # Create error on x file
+    ds_err_x = open(ds_path + '/error_x.csv', 'w')
+    ds_err_x.write('Error,Control\n')
+    
+    # Create error on y file
+    ds_err_y = open(ds_path + '/error_y.csv', 'w')
+    ds_err_y.write('Error,Control\n')
+    
+    # Create error on theta file
+    ds_err_theta = open(ds_path + '/error_theta.csv', 'w') 
+    ds_err_theta.write('Error,Control\n')
+
+# Print configuration parameters
 print(f"""
 Configuration parameters:
 Kp_v: {Kp_v}
@@ -65,7 +104,7 @@ goal_threshold: {goal_threshold}
 if control_mode == 0:
     print(f"control_mode: {control_mode} (PID)")
 
-if control_mode == 1:
+elif control_mode == 1:
     print(f"control_mode: {control_mode} (OpenAI)")
     print(f"AI model: {ai_model}")
     
@@ -76,6 +115,9 @@ if control_mode == 1:
         print("No valid AI system provided. PID with only proportional control will be used.")
     
     print(f"AI system: {ai_system}")
+
+elif control_mode == 2:
+    print(f"control_mode: {control_mode} (Simple Linear Regression)")
 
 ### Log prefix ###
 log_prefix = "mobile_robot_ai/"
@@ -134,6 +176,9 @@ class Control(Node):
         )
 
         #### Publishers ###
+        
+        # Next waypoint
+        self.publisher_next_wp = self.create_publisher(PoseStamped, 'next_wp', 10)
         
         # Control commands
         self.publisher_cmd = self.create_publisher(Twist, "/cmd_vel", 10)
@@ -233,6 +278,15 @@ class Control(Node):
                 theta_target = math.atan2(self.path[self.path_point][1]-self.odom[1], self.path[self.path_point][0]-self.odom[0])
                 waypoint = (self.path[self.path_point][0], self.path[self.path_point][1], theta_target)
                 
+                # Publish next waypoint
+                next_wp = PoseStamped()
+                next_wp.header.stamp = self.get_clock().now().to_msg()
+                next_wp.header.frame_id = 'map'
+                next_wp.pose.position.x = waypoint[0]
+                next_wp.pose.position.y = waypoint[1]
+                next_wp.pose.orientation.z = waypoint[2]
+                self.publisher_next_wp.publish(next_wp)
+                
                 print(f"""
                       odom_x = {self.odom[0]} [m]
                       odom_y = {self.odom[1]} [m]
@@ -243,45 +297,52 @@ class Control(Node):
                       goal_theta = {waypoint[2]} [rad]
                       """)
                 
-                (v, w, self.e, self.i) = controls.compute_control_commands(self.odom, waypoint, Kp, Ki, Kd, dt, self.e, self.i, control_mode=control_mode, ai_model=ai_model, ai_system=ai_system)
-            
-                print(f"""
-                      v_x = {v[0]} [m/s]
-                      v_y = {v[0]} [m/s]
-                      w_w = {w} [rad/s]
-                      """)   
-                    
-                ### Publish control commands ###
-                
-                cmd = Twist()
-                cmd.linear.x = v[0]
-                cmd.linear.y = v[1]
-                cmd.angular.z = w
-                
-                if self.goal_prev !=  self.goal:
-                    self.publisher_cmd.publish(cmd)
+                if control_mode != 2:
+                    (v, w, self.e, self.i) = controls.compute_control_commands(self.odom, waypoint, Kp, Ki, Kd, dt, self.e, self.i, control_mode=control_mode, ai_model=ai_model, ai_system=ai_system)
 
-                ### Compute control commands computation time ###
-                
-                end = time.time()
-                diff = end - start
-                print("Time = " + str(diff) + " [s]\n")    
-                
-                ### Publish logs ###
-                log = Log()
-                log.name = log_prefix + "v_x"
-                log.msg = str(v[0])
-                self.publisher_log.publish(log)
-                
-                log = Log()
-                log.name = log_prefix + "v_y"
-                log.msg = str(v[1])
-                self.publisher_log.publish(log)
-                
-                log = Log()
-                log.name = log_prefix + "w_z"
-                log.msg = str(w)
-                self.publisher_log.publish(log)
+                    print(f"""
+                        v_x = {v[0]} [m/s]
+                        v_y = {v[0]} [m/s]
+                        w_w = {w} [rad/s]
+                        """)   
+                        
+                    ### Publish control commands ###
+                    
+                    cmd = Twist()
+                    cmd.linear.x = v[0]
+                    cmd.linear.y = v[1]
+                    cmd.angular.z = w
+                    
+                    if self.goal_prev !=  self.goal:
+                        self.publisher_cmd.publish(cmd)
+
+                    ### Compute control commands computation time ###
+                    
+                    end = time.time()
+                    diff = end - start
+                    print("Time = " + str(diff) + " [s]\n")    
+                    
+                    ### Publish logs ###
+                    log = Log()
+                    log.name = log_prefix + "v_x"
+                    log.msg = str(v[0])
+                    self.publisher_log.publish(log)
+                    
+                    log = Log()
+                    log.name = log_prefix + "v_y"
+                    log.msg = str(v[1])
+                    self.publisher_log.publish(log)
+                    
+                    log = Log()
+                    log.name = log_prefix + "w_z"
+                    log.msg = str(w)
+                    self.publisher_log.publish(log)
+                    
+                    # Update dataset
+                    if dataset == True:
+                        ds_err_x.write(str(self.e[0]) + "," + str(v[0]) + "\n")
+                        ds_err_y.write(str(self.e[1]) + "," + str(v[1]) + "\n")
+                        ds_err_theta.write(str(self.e[2]) + "," + str(w) + "\n")
     
     def signal_handler(self, signum, frame):
         cmd = Twist()
