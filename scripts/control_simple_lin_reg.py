@@ -1,5 +1,7 @@
-import matplotlib.pyplot as plt
-import pandas as pd
+#!/usr/bin/env python3
+
+#import matplotlib.pyplot as plt
+import pandas as pd # type: ignore
 import numpy as np
 
 import signal
@@ -13,7 +15,7 @@ from nav_msgs.msg import Odometry
 from tf_transformations import euler_from_quaternion
 
 # DataSet
-dataset_folder = "" # TODO: add absolute path to the created folder by the pid_control script
+dataset_folder = "datasets/2024-10-25_13-35-52_dataset"
 ds_err_x = pd.read_csv(dataset_folder + "/error_x.csv")
 ds_err_y = pd.read_csv(dataset_folder + "/error_y.csv")
 ds_err_theta = pd.read_csv(dataset_folder + "/error_theta.csv")
@@ -43,7 +45,7 @@ train_theta = cdf_theta
 #print("Train set theta dimension: ", len(train_theta))
 
 # Using sklearn package to model data
-from sklearn import linear_model
+from sklearn import linear_model # type: ignore
 
 # X
 regr_x = linear_model.LinearRegression()
@@ -105,18 +107,22 @@ class Simple_Lin_Reg_Control(Node):
         # Create publisher for control commands
         self.publisher_cmd = self.create_publisher(
             Twist,
-            'cmd_vel',
+            'cmd_vel_handler',
             10
         )
         
         # Manage CTRL+C command
         signal.signal(signal.SIGINT, self.signal_handler)
-        
+    
+    ### Callbacks ###
+    
+    # Next waypoint
     def callback_next_wp(self, msg):
         self.next_wp_x = msg.pose.position.x
         self.next_wp_y = msg.pose.position.y
         self.next_wp_theta = msg.pose.orientation.z
-        
+    
+    # Odometry 
     def callback_odom(self, msg):
         self.odom_x = msg.pose.pose.position.x
         self.odom_y = msg.pose.pose.position.y
@@ -157,14 +163,9 @@ class Simple_Lin_Reg_Control(Node):
             
             self.publisher_cmd.publish(cmd)
             
-            print(f"""
-                    v_x = {v_x} [m/s]
-                    v_y = {v_y} [m/s]
-                    w_z = {w_theta} [rad/s]
-                    """)   
-            
             print("Time = " + str(diff) + " [s]\n")    
             
+    # Signal handler
     def signal_handler(self, signum, frame):
         cmd = Twist()
         cmd.linear.x = 0.0

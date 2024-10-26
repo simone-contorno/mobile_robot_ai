@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
-from mobile_robot_ai import utils, controls
+from mobile_robot_ai import utils
 from mobile_robot_ai.ai_prompts import *
 
 import os 
-import sys 
 import time
-import configparser
 import math
 import signal
 
@@ -18,49 +16,25 @@ from rcl_interfaces.msg import Log
 
 from tf_transformations import euler_from_quaternion
 
-### Parse configuration file ###
-script_directory = os.path.dirname(os.path.abspath(sys.argv[0])) 
-parser = configparser.ConfigParser()
-parser.read_file(open(script_directory + "/control_config.txt"))
-
-# Get PID params
-Kp_v = float(parser.get('PID', 'Kp_v'))
-Kp_w = float(parser.get('PID', 'Kp_w'))
-Kp = (Kp_v, Kp_w)
-
-Ki_v = float(parser.get('PID', 'Ki_v'))
-Ki_w = float(parser.get('PID', 'Ki_w'))
-Ki = (Ki_v, Ki_w)
-
-Kd_v = float(parser.get('PID', 'Kd_v'))
-Kd_w = float(parser.get('PID', 'Kd_w'))
-Kd = (Kd_v, Kd_w)
-
-dt = float(parser.get('PID', 'dt'))
-
 # Get GOAL params
-goal_threshold = float(parser.get('GOAL', 'goal_threashold'))
+goal_threshold = utils.get_config_param("goal", "goal_threshold")
 
 # Get CONTROL params
-control_mode = int(parser.get('CONTROL', 'control_mode'))
- 
-# Get AI params
-ai_model = str(parser.get('AI', 'ai_model'))
-ai_system = str(parser.get('AI', 'ai_system'))
+control_method = utils.get_config_param("control", "control_method")
 
 # Get ML params
-dataset_path = str(parser.get('ML', 'dataset_path'))
-dataset = bool(parser.get('ML', 'dataset'))
+dataset_path = utils.get_config_param('ml', 'dataset_path')
+dataset = utils.get_config_param('ml', 'dataset')
 
 # If the Linear Regression is enabled, dataset is not created
-if control_mode == 2:
+if control_method == 2:
     dataset = False
 
 if dataset == True:
     print("Dataset enabled")
     
     # Get dataset path
-    ds_path = dataset_path + "/Datasets"
+    ds_path = dataset_path + "/datasets"
     
     # Check if the Datasets folder exists
     if not os.path.exists(ds_path):
@@ -87,37 +61,7 @@ if dataset == True:
     ds_err_theta.write('Error,Control\n')
 
 # Print configuration parameters
-print(f"""
-Configuration parameters:
-Kp_v: {Kp_v}
-Kp_w: {Kp_w}
-
-Ki_v: {Ki_v}
-Ki_w: {Ki_w}
-
-Kd_v: {Kd_v}
-Kd_w: {Kd_w}   
-
-goal_threshold: {goal_threshold}
-""")
-
-if control_mode == 0:
-    print(f"control_mode: {control_mode} (PID)")
-
-elif control_mode == 1:
-    print(f"control_mode: {control_mode} (OpenAI)")
-    print(f"AI model: {ai_model}")
-    
-    if ai_system in globals():
-        ai_system = globals()[ai_system]
-    else:
-        ai_system = pid_proportional_only
-        print("No valid AI system provided. PID with only proportional control will be used.")
-    
-    print(f"AI system: {ai_system}")
-
-elif control_mode == 2:
-    print(f"control_mode: {control_mode} (Simple Linear Regression)")
+print(f"goal_threshold: {goal_threshold}")
 
 ### Log prefix ###
 log_prefix = "mobile_robot_ai/"
@@ -127,13 +71,14 @@ log_prefix = "mobile_robot_ai/"
 class Control(Node):
 
     def __init__(self):
-        super().__init__('pid_control')
+        super().__init__('control_handler')
         
         ### Private variables ###
         
-        # PID
-        self.e = (0.0, 0.0, 0.0) # proportional error
-        self.i = (0.0, 0.0, 0.0) # integral error
+        # Controls
+        self.v_x = None
+        self.v_y = None
+        self.w_z = None
         
         # Iteration counter
         self.iter = 0
@@ -174,6 +119,14 @@ class Control(Node):
             self.plan_callback,
             10
         )
+        
+        # Control commands
+        self.subscription_cmd = self.create_subscription(
+            Twist,
+            'cmd_vel_handler',
+            self.cmd_vel_callback,
+            10
+        )
 
         #### Publishers ###
         
@@ -191,6 +144,12 @@ class Control(Node):
     
     ### Callbacks ###
     
+    # Controls
+    def cmd_vel_callback(self, msg):
+        self.v_x = msg.linear.x
+        self.v_y = msg.linear.y
+        self.w_z = msg.angular.z
+        
     # Goal
     def goal_pose_callback(self, msg):
         x = msg.pose.position.x
@@ -249,7 +208,12 @@ class Control(Node):
                 self.get_logger().info("[Odom] Goal reached!")
                 self.goal_prev = self.goal # Update old goal
                 
-                # Set velocities to 0
+                # Reset local velocities
+                self.v_x = 0.0
+                self.v_y = 0.0
+                self.w_z = 0.0
+                
+                # Stop the robot
                 cmd = Twist()
                 cmd.linear.x = 0.0
                 cmd.linear.y = 0.0
@@ -257,24 +221,19 @@ class Control(Node):
                 
                 self.publisher_cmd.publish(cmd)
 
-            if self.path != None:
-                
-                print("--------------------------------------------------")
-                print("Iteration " + str(self.iter))
-                self.iter += 1
-                print("--------------------------------------------------\n")
+            if self.path != None and self.goal_prev != self.goal: 
                 
                 start = time.time()
                 
                 ### Compute the next point on the path to reach ###
                 
-                next_point = utils.compute_next_point(self.path, self.odom, goal_threshold)
+                next_point = self.compute_next_point(self.path, self.odom, goal_threshold)
                 
                 if next_point > self.path_point:
                     self.path_point = next_point
                     print("Next point on the path: " + str(next_point))
 
-                ### Compute the PID control ###
+                # Get theta and define next waypoint
                 theta_target = math.atan2(self.path[self.path_point][1]-self.odom[1], self.path[self.path_point][0]-self.odom[0])
                 waypoint = (self.path[self.path_point][0], self.path[self.path_point][1], theta_target)
                 
@@ -287,33 +246,38 @@ class Control(Node):
                 next_wp.pose.orientation.z = waypoint[2]
                 self.publisher_next_wp.publish(next_wp)
                 
-                print(f"""
-                      odom_x = {self.odom[0]} [m]
-                      odom_y = {self.odom[1]} [m]
-                      odom_theta = {self.odom[2]} [rad]
-                      
-                      goal_x = {waypoint[0]} [m]
-                      goal_y = {waypoint[1]} [m]
-                      goal_theta = {waypoint[2]} [rad]
-                      """)
-                
-                if control_mode != 2:
-                    (v, w, self.e, self.i) = controls.compute_control_commands(self.odom, waypoint, Kp, Ki, Kd, dt, self.e, self.i, control_mode=control_mode, ai_model=ai_model, ai_system=ai_system)
+                ### Get the control inputs ###
+                if self.v_x != None and self.v_y != None and self.w_z != None:
+                    
+                    print("--------------------------------------------------")
+                    print("Iteration " + str(self.iter))
+                    self.iter += 1
+                    print("--------------------------------------------------\n")
 
                     print(f"""
-                        v_x = {v[0]} [m/s]
-                        v_y = {v[0]} [m/s]
-                        w_w = {w} [rad/s]
+                        odom_x = {self.odom[0]} [m]
+                        odom_y = {self.odom[1]} [m]
+                        odom_theta = {self.odom[2]} [rad]
+                        
+                        goal_x = {waypoint[0]} [m]
+                        goal_y = {waypoint[1]} [m]
+                        goal_theta = {waypoint[2]} [rad]
+                        """)
+                    
+                    print(f"""
+                        v_x = {self.v_x} [m/s]
+                        v_y = {self.v_y} [m/s]
+                        w_z = {self.w_z} [rad/s]
                         """)   
                         
                     ### Publish control commands ###
                     
                     cmd = Twist()
-                    cmd.linear.x = v[0]
-                    cmd.linear.y = v[1]
-                    cmd.angular.z = w
+                    cmd.linear.x = self.v_x
+                    cmd.linear.y = self.v_y
+                    cmd.angular.z = self.w_z
                     
-                    if self.goal_prev !=  self.goal:
+                    if self.goal_prev != self.goal:
                         self.publisher_cmd.publish(cmd)
 
                     ### Compute control commands computation time ###
@@ -325,25 +289,52 @@ class Control(Node):
                     ### Publish logs ###
                     log = Log()
                     log.name = log_prefix + "v_x"
-                    log.msg = str(v[0])
+                    log.msg = str(self.v_x)
                     self.publisher_log.publish(log)
                     
                     log = Log()
                     log.name = log_prefix + "v_y"
-                    log.msg = str(v[1])
+                    log.msg = str(self.v_y)
                     self.publisher_log.publish(log)
                     
                     log = Log()
                     log.name = log_prefix + "w_z"
-                    log.msg = str(w)
+                    log.msg = str(self.w_z)
                     self.publisher_log.publish(log)
                     
                     # Update dataset
                     if dataset == True:
-                        ds_err_x.write(str(self.e[0]) + "," + str(v[0]) + "\n")
-                        ds_err_y.write(str(self.e[1]) + "," + str(v[1]) + "\n")
-                        ds_err_theta.write(str(self.e[2]) + "," + str(w) + "\n")
+                        e_x = waypoint[0] - self.odom[0]
+                        e_y = waypoint[1] - self.odom[1]
+                        e_theta = math.atan2(math.sin(waypoint[2] - self.odom[2]), math.cos(waypoint[2] - self.odom[2]))
+                        
+                        ds_err_x.write(str(e_x) + "," + str(self.v_x) + "\n")
+                        ds_err_y.write(str(e_y) + "," + str(self.v_y) + "\n")
+                        ds_err_theta.write(str(e_theta) + "," + str(self.w_z) + "\n")
     
+    # Compute the next point on the path to reach 
+    def compute_next_point(self, path, odom, threshold):     
+        # 1. Find the closest point on the path to the actual position
+        next_point = 0
+        min_dist = ((path[0][0] - odom[0])**2 + (path[0][1] - odom[1])**2)**0.5
+        for i in range(len(path)):
+            dist = ((path[i][0] - odom[0])**2 + (path[i][1] - odom[1])**2)**0.5
+            if dist < min_dist:
+                next_point = i
+
+        # 2. Set the next point on the path
+        euler_dist = ((path[next_point][0] - odom[0])**2 + (path[next_point][1] - odom[1])**2)**0.5
+        while euler_dist < threshold:
+            euler_dist = ((path[next_point][0] - odom[0])**2 + (path[next_point][1] - odom[1])**2)**0.5
+            if next_point < len(path)-1:
+                next_point += 1
+            else:
+                next_point = len(path)-1
+                break
+            
+        return next_point
+
+    # Signal handler
     def signal_handler(self, signum, frame):
         cmd = Twist()
         cmd.linear.x = 0.0
