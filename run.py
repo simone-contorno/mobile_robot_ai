@@ -2,6 +2,7 @@
 
 import subprocess
 import os
+from mobile_robot_ai import utils
 
 result = subprocess.run(['ros2', 'pkg', 'prefix', 'mobile_robot_ai'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 workspace_path = result.stdout.decode('utf-8').strip()
@@ -38,10 +39,32 @@ cmds.append(f"""
             """)
 
 cmds.append("""
-            echo 'Running pid_control...' ; 
-            ros2 run mobile_robot_ai pid_control.py ; 
+            echo 'Running control_handler...' ; 
+            ros2 run mobile_robot_ai control_handler.py ; 
             read -p \'Press any key to exit...\'
             """)
+
+# Run control method
+control_method = utils.get_config_param("control", "control_method")
+
+if control_method == 0:
+    cmds.append("""
+                echo 'Running control_pid...' ; 
+                ros2 run mobile_robot_ai control_pid.py ; 
+                read -p \'Press any key to exit...\'
+                """)
+elif control_method == 1:
+    cmds.append("""
+                echo 'Running control_openai...' ; 
+                ros2 run mobile_robot_ai control_openai.py ; 
+                read -p \'Press any key to exit...\'
+                """)
+elif control_method == 2:
+    cmds.append("""
+                echo 'Running control_simple_lin_reg...' ; 
+                ros2 run mobile_robot_ai control_simple_lin_reg.py ; 
+                read -p \'Press any key to exit...\'
+                """)
 
 # Start the processes
 processes = []
