@@ -36,6 +36,7 @@ install(DIRECTORY
   maps 
   rviz 
   worlds 
+  datasets
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -50,20 +51,19 @@ ament_python_install_package(${PROJECT_NAME})
 
 # Install Python executables
 install(PROGRAMS
-  scripts/pid_control.py
+  scripts/control_handler.py
+  scripts/control_openai.py
+  scripts/control_pid.py
+  scripts/control_simple_lin_reg.py
   scripts/set_goal.py
   run.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # Install additional files
-install(FILES
-  control_config.txt
-  DESTINATION share/${PROJECT_NAME} 
-)
 
 install(FILES
-  control_config.txt
+  config.json
   DESTINATION lib/${PROJECT_NAME}
 )
 
