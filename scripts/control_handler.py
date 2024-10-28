@@ -7,6 +7,7 @@ import os
 import time
 import math
 import signal
+import numpy as np
 
 import rclpy
 from rclpy.node import Node
@@ -16,10 +17,12 @@ from rcl_interfaces.msg import Log
 
 from tf_transformations import euler_from_quaternion
 
-# Get GOAL params
+# Get Goal params
 goal_threshold = utils.get_config_param("goal", "goal_threshold")
+weight_x = utils.get_config_param("goal", "weight_x")
+weight_y = utils.get_config_param("goal", "weight_y")
 
-# Get CONTROL params
+# Get Control params
 control_method = utils.get_config_param("control", "control_method")
 
 # Get ML params
@@ -228,6 +231,7 @@ class Control(Node):
                 ### Compute the next point on the path to reach ###
                 
                 next_point = self.compute_next_point(self.path, self.odom, goal_threshold)
+                print("Set point on the path (" + str(len(self.path)) + "): " + str(next_point))
                 
                 if next_point > self.path_point:
                     self.path_point = next_point
@@ -264,18 +268,32 @@ class Control(Node):
                         goal_theta = {waypoint[2]} [rad]
                         """)
                     
-                    print(f"""
-                        v_x = {self.v_x} [m/s]
-                        v_y = {self.v_y} [m/s]
-                        w_z = {self.w_z} [rad/s]
-                        """)   
-                        
+                    ### Manage control inputs ###
+                    
+                    # Get the linear velocity with the sign of the orientation
+                    self.v_x = math.copysign(abs(self.v_x), math.cos(waypoint[2]-self.odom[2]))
+                    self.v_y = math.copysign(abs(self.v_y), math.sin(waypoint[2]-self.odom[2]))
+                    
+                    # TODO: Set minimum and maximum velocities in the configuration file
+                    self.vx = np.clip(self.v_x, -1.0, 1.0)
+                    self.vy = np.clip(self.v_y, -1.0, 1.0)
+                    self.wz = np.clip(self.w_z, -1.0, 1.0)
+                    
+                    # TODO: Set minimum and maximum acceleration values in the configuration file
+                    
                     ### Publish control commands ###
                     
                     cmd = Twist()
-                    cmd.linear.x = self.v_x
-                    cmd.linear.y = self.v_y
-                    cmd.angular.z = self.w_z
+                    
+                    cmd.linear.x = self.vx
+                    cmd.linear.y = self.vy
+                    cmd.angular.z = self.wz
+                    
+                    print(f"""
+                        v_x = {cmd.linear.x} [m/s]
+                        v_y = {cmd.linear.y} [m/s]
+                        w_z = {cmd.angular.z} [rad/s]
+                        """)   
                     
                     if self.goal_prev != self.goal:
                         self.publisher_cmd.publish(cmd)
@@ -323,9 +341,9 @@ class Control(Node):
                 next_point = i
 
         # 2. Set the next point on the path
-        euler_dist = ((path[next_point][0] - odom[0])**2 + (path[next_point][1] - odom[1])**2)**0.5
+        euler_dist = self.weight_euclidean_distance_2d(path[next_point], odom, weight_x, weight_y)
         while euler_dist < threshold:
-            euler_dist = ((path[next_point][0] - odom[0])**2 + (path[next_point][1] - odom[1])**2)**0.5
+            euler_dist = self.weight_euclidean_distance_2d(path[next_point], odom, weight_x, weight_y)
             if next_point < len(path)-1:
                 next_point += 1
             else:
@@ -333,6 +351,12 @@ class Control(Node):
                 break
             
         return next_point
+    
+    def weight_euclidean_distance_2d(self, goal, odom, w1, w2):
+        dist1 = (goal[0] - odom[0]) * (w1 / (w1+w2))
+        dist2 = (goal[1] - odom[1]) * (w2 / (w1+w2))
+        
+        return (dist1**2 + dist2**2)**0.5
 
     # Signal handler
     def signal_handler(self, signum, frame):
