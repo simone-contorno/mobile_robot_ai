@@ -1,33 +1,34 @@
 {
     "pid": {
-      "Kp_vx": 0.1,
-      "Kp_vy": 0.1,
-      "Kp_wz": 0.1,
-      "Ki_vx": 0.0,
-      "Ki_vy": 0.0,
-      "Ki_wz": 0.0,
-      "Kd_vx": 0.0,
-      "Kd_vy": 0.0,
-      "Kd_wz": 0.0,
-      "dt": 0.1
+      	"Kp_vx": 0.50,
+		"Kp_vy": 0.50,
+		"Kp_wz": 1.50,
+		"Ki_vx": 0.0,
+		"Ki_vy": 0.0,
+		"Ki_wz": 0.0,
+		"Kd_vx": 0.01,
+		"Kd_vy": 0.01,
+		"Kd_wz": 0.05,
+		"dt": 0.03,
+		"ziegler_nichols": false
     },
     "goal": {
-      "goal_threshold": 0.1
+      	"goal_threshold": 0.1
     },
     "control": {
-      "control_method": 0
+      	"control_method": 0
     },
     "path": {
-      "path_percentage": 25.0
+      	"path_percentage": 25.0
     },
     "openai": {
-      "model": "gpt-4o-mini",
-      "system": "pid_proportional_only",
-      "llama_api": ""
+		"model": "gpt-4o-mini",
+		"system": "pid_proportional_only",
+		"llama_api": ""
     },
     "ml": {
-      "dataset_path": "/home/simone/ros2_ws_nav/src/mobile_robot_ai",
-      "dataset": false
+		"dataset_path": "/home/simone/ros2_ws_nav/src/mobile_robot_ai",
+		"dataset": false
     }
 }
   
