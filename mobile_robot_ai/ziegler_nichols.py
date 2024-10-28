@@ -1,8 +1,5 @@
 import numpy as np
 
-# Global variables for K_u and P_u
-
-
 class ZieglerNichols():
     def __init__(self):
         self.Ku = 0.0
@@ -24,11 +21,10 @@ class ZieglerNichols():
 
         # Check if enough data points are provided
         if len(self.prev_outputs) < window_size:
-            print("Not enough data provided")
             return # Not enough data to evaluate
 
-        # Calculate the standard deviation of the outputs
-        std_dev = np.std(self.prev_outputs)
+        # Calculate the standard deviation of the last window size outputs
+        std_dev = np.std(self.prev_outputs[-window_size:])
 
         # Check if the standard deviation is within tolerance
         is_steady = std_dev < tolerance
@@ -44,8 +40,7 @@ class ZieglerNichols():
             elif self.prev_trough is None or control_input < self.prev_outputs[-2]:
                 self.prev_trough = control_input
                 self.prev_trough_time = time
-
-            #previous_outputs[i] = current_output  # Update previous output
+                
         else:
             # Increment failure count if not steady
             self.fail_count += 1
@@ -56,8 +51,9 @@ class ZieglerNichols():
                     self.Pu = abs(self.prev_peak_time - self.prev_trough_time)
                     print("K_u: ", self.Ku)
                     print("P_u: ", self.Pu)
+                """
                 else:
                     print("P_u cannot be calculated.\n"+
                           "Try to modify the the Ku_increase, tolerance, window_size and/or failure_threshold parameters.")
-        
+                """
         return 
