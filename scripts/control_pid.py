@@ -206,7 +206,7 @@ class Control_PID(Node):
             w_z += self.Ki[2] * i_theta + self.Kd[2] * d_theta
             
         # 6. Update return values
-        v = [abs(v_x), abs(v_y)] 
+        v = [v_x, v_y] 
         w = w_z
         self.e_prev = [e_x, e_y, e_theta]
         self.i = [i_x, i_y, i_theta]
