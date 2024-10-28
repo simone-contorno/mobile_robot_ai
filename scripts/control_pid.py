@@ -2,7 +2,9 @@
 
 import math 
 import signal 
+import time
 from mobile_robot_ai import utils
+from mobile_robot_ai import ziegler_nichols as zn
 
 import rclpy
 from rclpy.node import Node
@@ -16,6 +18,12 @@ class Control_PID(Node):
         super().__init__('control_pid')
         
         ### Private variables ###
+
+        # Ziegler-Nichols tuning
+        self.zn = utils.get_config_param("pid", "ziegler_nichols")
+        self.zn_vx = zn.ZieglerNichols()
+        self.zn_vy = zn.ZieglerNichols()
+        self.zn_wz = zn.ZieglerNichols()
         
         # Tuning coefficients
         self.Kp_vx = utils.get_config_param("pid", "Kp_vx")
@@ -120,9 +128,47 @@ class Control_PID(Node):
         
         (_, _, self.odom_theta) = euler_from_quaternion([qx, qy, qz, qw])
         self.odom = (self.odom_x, self.odom_y, self.odom_theta)
-        
+       
         if self.next_wp_x != None and self.next_wp_y != None and self.next_wp_theta != None and self.odom_x != None and self.odom_y != None and self.odom_theta != None:
             v, w = self.pid()
+            
+            # Ziegler-Nichols tuning
+            if self.zn == True:
+                # Velocity along x
+                if self.zn_vx != None:
+                    self.zn_vx.ziegler_nichols_tuning(v[0], time.time())
+                    if self.zn_vx.Ku != None and self.zn_vx.Pu != None:
+                        print("Ku_vx: ", self.zn_vx.Ku)
+                        print("Pu_vx: ", self.zn_vx.Pu)
+                        print("--------------------")
+                        self.zn_vx = None
+                    elif self.zn_vx.Ku != None:
+                        self.Kp_vx = self.zn_vx.Ku
+                
+                # Velocity along y
+                if self.zn_vy != None:
+                    self.zn_vy.ziegler_nichols_tuning(v[1], time.time())
+                    if self.zn_vy.Ku != None and self.zn_vy.Pu != None:
+                        print("Ku_vy: ", self.zn_vy.Ku)
+                        print("Pu_vy: ", self.zn_vy.Pu)
+                        print("--------------------")
+                        self.zn_vy = None
+                    elif self.zn_vy.Ku != None:
+                        self.Kp_vy = self.zn_vy.Ku
+                
+                # Angular velocity
+                if self.zn_wz != None:
+                    self.zn_wz.ziegler_nichols_tuning(w, time.time())
+                    if self.zn_wz.Ku != None and self.zn_wz.Pu != None:
+                        print("Ku_wz: ", self.zn_wz.Ku)
+                        print("Pu_wz: ", self.zn_wz.Pu)
+                        print("--------------------")
+                        self.zn_wz = None
+                    elif self.zn_wz.Ku != None:
+                        self.Kp_wz = self.zn_wz.Ku
+                
+                # Update Proportional terms
+                self.Kp = (self.Kp_vx, self.Kp_vy, self.Kp_wz)
             
             # Publish control commands
             cmd = Twist()
@@ -130,7 +176,7 @@ class Control_PID(Node):
             cmd.linear.y = v[1]
             cmd.angular.z = w
             self.publisher_cmd.publish(cmd)
-    
+            
     ### PID ###
     def pid(self):    
         # 1. Compute proportional term
@@ -140,8 +186,8 @@ class Control_PID(Node):
 
         # 2. Compute the desired velocities
         v_x = self.Kp[0] * e_x 
-        v_y = self.Kp[0] * e_y 
-        w_z = self.Kp[1] * e_theta 
+        v_y = self.Kp[1] * e_y 
+        w_z = self.Kp[2] * e_theta 
         
         if self.dt > 0.0:
             # 3. Compute integral term
@@ -156,11 +202,11 @@ class Control_PID(Node):
             
             # 5. Update the desired velocities
             v_x += self.Ki[0] * i_x + self.Kd[0] * d_x
-            v_y += self.Ki[0] * i_y + self.Kd[0] * d_y
-            w_z += self.Ki[1] * i_theta + self.Kd[1] * d_theta
+            v_y += self.Ki[1] * i_y + self.Kd[1] * d_y
+            w_z += self.Ki[2] * i_theta + self.Kd[2] * d_theta
             
         # 6. Update return values
-        v = [v_x, v_y]
+        v = [abs(v_x), abs(v_y)] 
         w = w_z
         self.e_prev = [e_x, e_y, e_theta]
         self.i = [i_x, i_y, i_theta]
