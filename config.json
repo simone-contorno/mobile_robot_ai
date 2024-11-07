@@ -1,19 +1,21 @@
 {
     "pid": {
       	"Kp_vx": 0.50,
-		"Kp_vy": 0.50,
-		"Kp_wz": 1.50,
+		"Kp_vy": 0.00,
+		"Kp_wz": 2.50,
 		"Ki_vx": 0.0,
 		"Ki_vy": 0.0,
 		"Ki_wz": 0.0,
 		"Kd_vx": 0.01,
-		"Kd_vy": 0.01,
+		"Kd_vy": 0.00,
 		"Kd_wz": 0.05,
 		"dt": 0.03,
 		"ziegler_nichols": false
     },
     "goal": {
-      	"goal_threshold": 0.1
+      	"goal_threshold": 0.1,
+		"weight_x": 1.0,
+		"weight_y": 0.0
     },
     "control": {
       	"control_method": 0
@@ -27,7 +29,7 @@
 		"llama_api": ""
     },
     "ml": {
-		"dataset_path": "/home/simone/ros2_ws_nav/src/mobile_robot_ai",
+		"dataset_path": "",
 		"dataset": false
     }
 }
