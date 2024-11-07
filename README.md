@@ -5,7 +5,6 @@ A Python-based ROS2 simulation using Nav2 to operate a unicycle robot in a simul
 ## Table of Contents
 
 - [Overview](#overview)
-- [Overview](#overview)
 - [Features](#features)
 - [Control methods](#controls)
 - [How it works](#how)
@@ -13,7 +12,7 @@ A Python-based ROS2 simulation using Nav2 to operate a unicycle robot in a simul
 - [Installation](#install)
 - [Configuration](#config)
 - [Execution](#exec)
-- [Improvements](#improve)
+- [Further Improvements](#improve)
 
 <a name="overview"></a>
 
