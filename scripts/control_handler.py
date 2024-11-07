@@ -343,12 +343,12 @@ class Control(Node):
         # 2. Set the next point on the path
         euler_dist = self.weight_euclidean_distance_2d(path[next_point], odom, weight_x, weight_y)
         while euler_dist < threshold:
-            euler_dist = self.weight_euclidean_distance_2d(path[next_point], odom, weight_x, weight_y)
             if next_point < len(path)-1:
                 next_point += 1
             else:
                 next_point = len(path)-1
                 break
+            euler_dist = self.weight_euclidean_distance_2d(path[next_point], odom, weight_x, weight_y)
             
         return next_point
     
