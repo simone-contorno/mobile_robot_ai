@@ -4,17 +4,16 @@ A Python-based ROS2 simulation using Nav2 to operate a unicycle robot in a simul
 
 ## Table of Contents
 
-<ul>
-    <li>[Overview](#overview)</li>
-    <li>[Features](#features)</li>
-    <li>[Control methods](#controls)</li>
-    <li>[How it works](#how)</li>
-    <li>[Prerequisites](#pre)</li>
-    <li>[Installation](#install)</li>
-    <li>[Configuration](#config)</li>
-    <li>[Execution](#exec)</li>
-    <li>[Improvements](#improve)</li>
-</ul>
+- [Overview](#overview)
+- [Overview](#overview)
+- [Features](#features)
+- [Control methods](#controls)
+- [How it works](#how)
+- [Prerequisites](#pre)
+- [Installation](#install)
+- [Configuration](#config)
+- [Execution](#exec)
+- [Improvements](#improve)
 
 <a name="overview"></a>
 
