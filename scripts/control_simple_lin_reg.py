@@ -12,10 +12,13 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
 
+from mobile_robot_ai import utils
+
 from tf_transformations import euler_from_quaternion
 
 # DataSet
-dataset_folder = "datasets/2024-10-25_13-35-52_dataset"
+
+dataset_folder = utils.get_config_param("ml", "dataset_path")
 ds_err_x = pd.read_csv(dataset_folder + "/error_x.csv")
 ds_err_y = pd.read_csv(dataset_folder + "/error_y.csv")
 ds_err_theta = pd.read_csv(dataset_folder + "/error_theta.csv")
@@ -77,7 +80,7 @@ print('Theta Intercept: ', regr_theta.intercept_)
 class Simple_Lin_Reg_Control(Node):
 
     def __init__(self):
-        super().__init__('simple_lin_reg_control')
+        super().__init__('control_simple_lin_reg')
         
         # Private variables
         self.next_wp_x = None
