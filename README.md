@@ -58,6 +58,10 @@ The PID orientation is computed to orient the robot always againts the goal poin
 <a name="pre"></a>
 
 ## Prerequisites
+
+<b>ROS Distro: Foxy or lower</b> <br>
+(see [Known Problems](#known) if you use Humble or higher).
+
 To run the simulation, the following packages must be installed:
 <ul>
     <li><a href="https://docs.nav2.org/getting_started/index.html">navigation2</a></li>
