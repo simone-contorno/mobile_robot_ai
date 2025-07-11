@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 project(mobile_robot_ai)
 
 # Default to C++14
@@ -65,6 +65,11 @@ install(PROGRAMS
 install(FILES
   config.json
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(FILES
+  config.json
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()
