@@ -60,15 +60,28 @@ The PID orientation is computed to orient the robot always againts the goal poin
 To run the simulation, the following packages must be installed:
 <ul>
     <li><a href="https://docs.nav2.org/getting_started/index.html">navigation2</a></li>
+    <pre><code>sudo apt install ros-[ros2-distro]-navigation2</pre></code>
     <li><a href="https://docs.nav2.org/getting_started/index.html">nav2-bringup</a></li>
+    <pre><code>sudo apt install ros-[ros2-distro]-nav2-bringup</pre></code>
     <li><a href="https://docs.nav2.org/getting_started/index.html">turtlebot3-gazebo</a></li>
+    Jazzy and newer:
+    <pre><code>sudo apt install ros-[ros2-distro]-nav2-minimal-tb*</pre></code>
+    Iron and older:
+    <pre><code>sudo apt install ros-[ros2-distro]-turtlebot3-gazebo</pre></code>
+    <li><a href="https://index.ros.org/p/tf_transformations/">tf-transformations</a></li>
+    <pre><code>sudo apt install ros-[ros2-distro]-tf-transformations</pre></code>
 </ul>
 
 To use the ML methods, you need to install the following packages:
 <ul>
     <li><a href="https://pandas.pydata.org/docs/getting_started/install.html">Pandas</a></li>
-    <li><a href="https://numpy.org/install/">NumPy</a></li>
+    <pre><code>pip install pandas</pre></code>
+    <li><a href="https://pypi.org/project/transforms3d/0.4.1/">transforms3d 0.4.1</a></li>
+    <pre><code>pip install transforms3d==0.4.1</pre></code>
+    <li><a href="https://numpy.org/install/">NumPy 1.26.4</a></li>
+    <pre><code>pip install numpy==1.26.4</pre></code>
     <li><a href="https://scikit-learn.org/stable/install.html">scikit-learn</a></li>
+    <pre><code>pip install scikit-learn</pre></code>
 </ul>
 
 You can easily install all of these packages by running the <i><b>config.sh</b></i> file, passing the ROS2 version name as argument.
