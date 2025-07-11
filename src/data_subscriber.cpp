@@ -9,8 +9,10 @@
 #include <string>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
+#include <nlohmann/json.hpp>
 
 using namespace std;
+using json = nlohmann::json;
 
 float path_percentage = 50.0;
 
@@ -161,85 +163,27 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    std::string file = package_share_directory + "/control_config.txt";
-    std::string key = "path_percentage";
+    std::string file = package_share_directory + "/config.json";
 
-    // Open the file
-    std::ifstream config_file;
-    try {
-        config_file.open(file, std::ios::in);
-    }
-    catch(const std::exception& e) {
-        std::cerr << e.what() << '\n';
-    }
-
-    // Check if the file was successfully opened
+    // Open and parse the JSON config file
+    std::ifstream config_file(file);
     if (!config_file.is_open()) {
-        std::cerr << "Error opening file: " << file << std::endl;
-        
-        // Check specific error conditions
-        if (errno) {
-            std::cerr << "Error: " << strerror(errno) << std::endl;
-        }
-
-        if (config_file.fail()) {
-            std::cerr << "General failure error." << std::endl;
-        }
-        
-        if (config_file.bad()) {
-            std::cerr << "Read/write error on i/o operation." << std::endl;
-        }
-
-        if (config_file.eof()) {
-            std::cerr << "End-of-File reached on input operation." << std::endl;
-        }
-        
+        std::cerr << "Error opening config file: " << file << std::endl;
         return 1;
     }
-    
-    // Read the file line by line
-    std::string line;
-    while (getline(config_file, line)) {
 
-        // Check if the line contains the key
-        size_t pos = line.find(key);
-
-        if (pos != std::string::npos) {
-
-            // Extract the value part
-            size_t start = line.find('=', pos);
-
-            if (start != std::string::npos) {
-
-                // Move to the position after the '=' character
-                start++;
-
-                // Trim any leading whitespace
-                while (start < line.size() && std::isspace(line[start])) {
-                    start++;
-                }
-                
-                // Extract the numeric value as a substring
-                std::string valueStr = line.substr(start);
-
-                // Convert the string value to float
-                bool valid = true;
-                try { // Attempt to convert string to float
-                    std::stof(valueStr);  
-                } catch (const std::invalid_argument& e) { // Conversion failed due to invalid argument
-                    cout << "Path percentage invalid argument: " << e.what() << endl;
-                    valid = false;
-                } catch (const std::out_of_range& e) {  // Conversion failed due to out of range error
-                    cout << "Path percentage out of range: " << e.what() << endl;
-                    valid = false;   
-                }
-
-                if (valid == true)
-                    path_percentage = std::stof(valueStr);
-            }
+    try {
+        json config_json;
+        config_file >> config_json;
+        if (config_json.contains("path") && config_json["path"].contains("path_percentage")) {
+            path_percentage = config_json["path"]["path_percentage"].get<float>();
         }
+    } catch (const std::exception& e) {
+        std::cerr << "Error parsing config.json: " << e.what() << std::endl;
+        return 1;
     }
-    std::cout << key << ": " << path_percentage << std::endl;
+
+    std::cout << "path_percentage: " << path_percentage << std::endl;
 
     // Initialize the node
     rclcpp::init(argc, argv);
@@ -249,6 +193,5 @@ int main(int argc, char* argv[])
 
     // Terminate the node
     rclcpp::shutdown();
-
     return 0;
 }
