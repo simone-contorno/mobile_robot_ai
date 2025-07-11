@@ -12,6 +12,7 @@ A Python-based ROS2 simulation using Nav2 to operate a unicycle robot in a simul
 - [Installation](#install)
 - [Configuration](#config)
 - [Execution](#exec)
+- [Known Problems](#known)
 - [Further Improvements](#improve)
 
 <a name="overview"></a>
@@ -82,6 +83,8 @@ To use the ML methods, you need to install the following packages:
     <pre><code>pip install numpy==1.26.4</pre></code>
     <li><a href="https://scikit-learn.org/stable/install.html">scikit-learn</a></li>
     <pre><code>pip install scikit-learn</pre></code>
+    <li><a href="https://pypi.org/project/openai/">OpenAI</a></li>
+    <pre><code>pip install openai</pre></code>
 </ul>
 
 You can easily install all of these packages by running the <i><b>config.sh</b></i> file, passing the ROS2 version name as argument.
@@ -139,6 +142,16 @@ ros2 run mobile_robot_ai [control_method].py
 </code></pre>
 
 To easily execute all this commands, run the <i><b>run.py</b></i> file.
+
+<a name="known"></a>
+
+## Known Problems
+
+`cmd_vel` remapping doesn't work from ROS 2 Humble onward.
+
+From ROS 2 Humble, remappings set in a parent launch file (e.g. with `SetRemap`) **do not propagate** into included launch files like `bringup_launch.py`, unless the included file explicitly supports them via `LaunchArgument` and passes them to `Node(..., remappings=[...])`.
+
+As a result, remapping `cmd_vel` externally has **no effect** on Nav2's `controller_server` unless you use a patched version of the launch file.
 
 <a name="improve"></a>
 
